@@ -53,7 +53,7 @@ router.get("/", getQuestions);
 router.get("/:id", getQuestionById);
 
 // ✅ Cek apakah modul sudah punya post test
-router.get("/check/modul/:modulId", async (req, res) => {
+router.get("/check/:modulId", async (req, res) => {
   try {
     const postTest = await Question.findOne({
       modulId: req.params.modulId,

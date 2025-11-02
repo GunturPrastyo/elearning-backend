@@ -11,6 +11,7 @@
     "seed:modul": "node src/seed/modulSeeder.js",
     "seed:topik": "node src/seed/topikSeeder.js",
     "seed:all": "npm run seed:modul && npm run seed:topik"
+   
   },
   "keywords": [],
   "author": "",
