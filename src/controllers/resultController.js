@@ -123,12 +123,23 @@ export const submitTest = async (req, res) => {
       finalScore = score;
     }
 
-    // Jika post-test topik lulus, tambahkan ID topik ke progres user
+    // Jika post-test topik lulus, lakukan beberapa update:
     if (testType === "post-test-topik" && topikId && finalScore >= 80) {
+      // 1. Tambahkan ID topik ke progres user
       await User.findByIdAndUpdate(userId, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
       });
+
+      // 2. (Opsional tapi direkomendasikan) Tandai topik itu sendiri sebagai selesai jika ada fieldnya
+      // Asumsi model Topik memiliki field `isCompletedByUser` atau sejenisnya.
+      // Jika tidak, logika ini bisa diskip, tapi akan lebih baik jika ada.
+      // Untuk contoh ini, kita asumsikan tidak ada dan frontend akan handle dari data user.
     }
+
+    // Setelah submit, hapus progress tes yang tersimpan untuk topik ini
+    await Result.deleteOne({
+      userId, topikId, testType: "post-test-topik-progress"
+    });
 
     res.status(201).json({
       message: "Jawaban berhasil disubmit.",
