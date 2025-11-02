@@ -231,12 +231,45 @@ export const getProgress = async (req, res) => {
       return res.status(400).json({ message: "Parameter testType dan topikId diperlukan." });
     }
 
+    // Pastikan testType di query sesuai dengan yang disimpan di DB
     const progress = await Result.findOne({
-      userId, modulId, topikId, testType: `${testType}-progress`
+      userId,
+      modulId: new mongoose.Types.ObjectId(modulId),
+      topikId: new mongoose.Types.ObjectId(topikId),
+      testType: testType, // FIX: Gunakan testType langsung dari query, jangan tambahkan "-progress" lagi
     });
+
+    if (!progress) {
+      // Ini bukan error, hanya berarti tidak ada progress. Kirim 404 agar frontend tahu.
+      return res.status(404).json({ message: "Progress tidak ditemukan." });
+    }
+
     res.status(200).json(progress);
   } catch (error) {
     console.error("Gagal mengambil progress:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
+
+/**
+ * @desc    Delete user's test progress
+ * @route   DELETE /api/results/progress
+ * @access  Private
+ */
+export const deleteProgress = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    // Ambil parameter dari query string, bukan dari body
+    const { modulId, topikId, testType } = req.query;
+
+    if (!testType || !topikId || !modulId) {
+      return res.status(400).json({ message: "Parameter modulId, topikId, dan testType diperlukan untuk menghapus progress." });
+    }
+
+    await Result.deleteOne({ userId, modulId, topikId, testType });
+    res.status(200).json({ message: "Progress berhasil dihapus." });
+  } catch (error) {
+    console.error("Gagal menghapus progress:", error);
     res.status(500).json({ message: "Terjadi kesalahan pada server." });
   }
 };
