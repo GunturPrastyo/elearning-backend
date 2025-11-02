@@ -21,7 +21,7 @@ const app = express();
 // ====================== CORS CONFIG ======================
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || "https://kelas-rho.vercel.app",
     credentials: true, // penting untuk kirim cookie dari browser
   })
 );
