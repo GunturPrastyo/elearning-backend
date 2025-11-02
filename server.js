@@ -21,7 +21,7 @@ const app = express();
 // ====================== CORS CONFIG ======================
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "https://kelas-rho.vercel.app",
+    origin: process.env.FRONTEND_URL || "https://kelas-guru.vercel.app",
     credentials: true, // penting untuk kirim cookie dari browser
   })
 );
