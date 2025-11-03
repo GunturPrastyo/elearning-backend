@@ -156,21 +156,12 @@ export const loginUser = async (req, res) => {
     const userObject = user.toObject();
     delete userObject.password;
 
-    console.log(`[Login] Mengatur cookie token untuk user: ${user.email}. Environment: ${process.env.NODE_ENV}`);
-
-    // Set cookie JWT
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      domain: process.env.NODE_ENV === "production" ? ".kelas-guru.vercel.app" : undefined,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
+    console.log(`[Login] Mengirim token untuk user: ${user.email}.`);
 
     res.status(200).json({
       message: "Login berhasil",
       user: { ...userObject, hasPassword: true }, // User login manual pasti punya password
+      token: token, // Kirim token di body respons
     });
   } catch (error) {
     console.error("Login Error:", error);
@@ -225,19 +216,12 @@ export const googleLogin = async (req, res) => {
     const userObject = user.toObject();
     delete userObject.password;
 
-    console.log(`[Google Login] Mengatur cookie token untuk user: ${user.email}. Environment: ${process.env.NODE_ENV}`);
-
-    res.cookie("token", jwtToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      domain: process.env.NODE_ENV === 'production' ? '.domain-utama-anda.com' : undefined, // Contoh: '.elearning.com'
-    });
+    console.log(`[Google Login] Mengirim token untuk user: ${user.email}.`);
 
     res.status(200).json({
       message: "Login Google berhasil",
       user: { ...userObject, hasPassword: !!user.password },
+      token: jwtToken, // Kirim token di body respons
     });
   } catch (error) {
     console.error("Google Login Error:", error);
@@ -247,11 +231,7 @@ export const googleLogin = async (req, res) => {
 
 // ========================= LOGOUT =========================
 export const logoutUser = (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-  });
+  // Dengan Bearer Token, logout ditangani oleh client dengan menghapus token.
   res.status(200).json({ message: "Logout berhasil" });
 };
 
