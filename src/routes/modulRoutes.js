@@ -5,7 +5,7 @@ import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.get("/", getModules);
+router.get("/", protect, getModules); // <-- Tambahkan 'protect' untuk konsistensi
 router.get("/progress", protect, getModulesWithProgress); // Rute untuk user melihat modul dengan progres
 router.get("/user-view/:slug", protect, getModuleDetailsForUser); // Rute untuk halaman detail modul user
 router.get("/:idOrSlug", getModuleById);

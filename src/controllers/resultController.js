@@ -337,15 +337,15 @@ export const getLatestResultByType = async (req, res) => {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
     }
 
-    const highestScoreResult = await Result.findOne({
+    const latestResult = await Result.findOne({
       userId,
       testType,
     })
-      .sort({ score: -1 }) // Urutkan dari skor tertinggi
+      .sort({ createdAt: -1 }) // Urutkan berdasarkan yang terbaru
       .lean(); // Gunakan .lean() untuk performa lebih baik jika tidak butuh method Mongoose
 
     // Tidak masalah jika null, frontend akan menanganinya
-    res.status(200).json(highestScoreResult);
+    res.status(200).json(latestResult);
 
   } catch (error) {
     console.error(`Gagal mengambil hasil tes tipe ${testType}:`, error);
