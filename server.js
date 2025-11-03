@@ -19,12 +19,15 @@ dotenv.config();
 const app = express();
 
 // ====================== CORS CONFIG ======================
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "https://kelas-guru.vercel.app",
-    credentials: true, // penting untuk kirim cookie dari browser
-  })
-);
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || "https://kelas-guru.vercel.app",
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  // Izinkan frontend mengirim header kustom 'X-Authorization'
+  allowedHeaders: ['Content-Type', 'X-Authorization'],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 
 // ====================== MIDDLEWARE ======================
 app.use(express.json());

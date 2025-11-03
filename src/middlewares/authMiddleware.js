@@ -2,17 +2,26 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 export const protect = async (req, res, next) => {
+  let token;
+
   try {
-    const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
-    if (!token)
-      return res.status(401).json({ message: "Tidak ada token, akses ditolak" });
+    // 1. Baca header kustom 'X-Authorization'
+    const authHeader = req.headers['x-authorization'];
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select("-password");
+    if (authHeader && authHeader.startsWith('Bearer')) {
+      // 2. Ambil token dari "Bearer <token>"
+      token = authHeader.split(' ')[1];
 
-    next();
+      // 3. Verifikasi token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // 4. Dapatkan user dan lampirkan ke request
+      req.user = await User.findById(decoded.id).select("-password");
+      next();
+    } else {
+      return res.status(401).json({ message: "Tidak ada token atau format header salah, akses ditolak" });
+    }
   } catch (error) {
-    console.error("Auth Error:", error);
     res.status(401).json({ message: "Token tidak valid atau telah kedaluwarsa" });
   }
 };
