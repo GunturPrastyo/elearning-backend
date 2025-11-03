@@ -156,12 +156,15 @@ export const loginUser = async (req, res) => {
     const userObject = user.toObject();
     delete userObject.password;
 
+    console.log(`[Login] Mengatur cookie token untuk user: ${user.email}. Environment: ${process.env.NODE_ENV}`);
+
     // Set cookie JWT
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 hari
+      // domain: process.env.NODE_ENV === 'production' ? '.yourdomain.com' : undefined, // Uncomment dan sesuaikan jika frontend dan backend di subdomain berbeda
     });
 
     res.status(200).json({
@@ -221,11 +224,14 @@ export const googleLogin = async (req, res) => {
     const userObject = user.toObject();
     delete userObject.password;
 
+    console.log(`[Google Login] Mengatur cookie token untuk user: ${user.email}. Environment: ${process.env.NODE_ENV}`);
+
     res.cookie("token", jwtToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      // domain: process.env.NODE_ENV === 'production' ? '.yourdomain.com' : undefined, // Uncomment dan sesuaikan jika frontend dan backend di subdomain berbeda
     });
 
     res.status(200).json({
