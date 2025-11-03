@@ -13,9 +13,9 @@ import Topik from "../models/Topik.js";
 export const createResult = async (req, res) => {
   try {
     const { testType, score, correct, total, timeTaken, modulId } = req.body;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
-    if (!testType || score === undefined || correct === undefined || total === undefined || timeTaken === undefined) {
+    if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
 
@@ -26,7 +26,7 @@ export const createResult = async (req, res) => {
       correct,
       total,
       timeTaken,
-      modulId,
+      ...(modulId && { modulId }), // Hanya tambahkan modulId jika ada
     });
 
     await newResult.save();
