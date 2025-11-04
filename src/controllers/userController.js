@@ -259,3 +259,75 @@ export const completeTopic = async (req, res) => {
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 };
+
+// ========================= ADMIN: GET ALL USERS =========================
+export const getAllUsers = async (req, res) => {
+  try {
+    // Ambil semua user, jangan tampilkan password, urutkan berdasarkan nama
+    const users = await User.find({}).select("-password").sort({ name: 1 });
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Error getting all users:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+// ========================= ADMIN: CREATE USER =========================
+export const createUser = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Nama dan email wajib diisi." });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email sudah digunakan." });
+    }
+
+    // Gunakan password yang diberikan atau default 'password123'
+    const passwordToHash = password || 'password123';
+    const hashedPassword = await bcrypt.hash(passwordToHash, 10);
+
+    const newUser = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || "user", // Default role adalah 'user'
+    });
+
+    const userObject = newUser.toObject();
+    delete userObject.password;
+
+    res.status(201).json({
+      message: "Pengguna berhasil dibuat.",
+      user: userObject,
+    });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+// ========================= ADMIN: DELETE USER =========================
+export const deleteUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Jangan biarkan admin menghapus akunnya sendiri dari sini
+    if (userId === req.user.id) {
+      return res.status(400).json({ message: "Tidak dapat menghapus akun sendiri." });
+    }
+
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) {
+      return res.status(404).json({ message: "Pengguna tidak ditemukan." });
+    }
+
+    res.status(200).json({ message: "Pengguna berhasil dihapus." });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
