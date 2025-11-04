@@ -1,16 +1,29 @@
 import express from "express";
-import { getModules, getModuleById, createModule, updateModul, deleteModul, getModulesWithProgress, getModuleDetailsForUser } from "../controllers/modulController.js";
-import { upload } from "../middlewares/upload.js";
-import { protect, admin } from "../middlewares/authMiddleware.js";
+import {
+  getModules,
+  getModuleById,
+  createModule,
+  updateModul,
+  deleteModul,
+  getModulesWithProgress,
+  getModuleDetailsForUser,
+  updateModulOrder, // <-- Impor fungsi baru
+} from "../controllers/modulController.js";
+import { protect, admin } from "../middlewares/authMiddleware.js"; // Asumsi middleware ada di sini
+import upload from "../middlewares/multerMiddleware.js"; // Asumsi middleware upload ada di sini
 
 const router = express.Router();
 
-router.get("/", protect, getModules); // <-- Tambahkan 'protect' untuk konsistensi
-router.get("/progress", protect, getModulesWithProgress); // Rute untuk user melihat modul dengan progres
-router.get("/user-view/:slug", protect, getModuleDetailsForUser); // Rute untuk halaman detail modul user
-router.get("/:idOrSlug", getModuleById);
+// Rute untuk user
+router.get("/progress", protect, getModulesWithProgress);
+router.get("/user-view/:slug", protect, getModuleDetailsForUser);
+
+// Rute untuk admin
+router.get("/", protect, admin, getModules);
 router.post("/", protect, admin, upload.single("icon"), createModule);
+router.put("/update-order", protect, admin, updateModulOrder); // <-- Tambahkan rute baru di sini
+router.get("/:idOrSlug", protect, admin, getModuleById);
 router.put("/:id", protect, admin, upload.single("icon"), updateModul);
-router.delete("/:id", protect, admin, deleteModul); // Tambahkan middleware protect dan admin
+router.delete("/:id", protect, admin, deleteModul);
 
 export default router;

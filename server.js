@@ -20,7 +20,7 @@ const app = express();
 
 // ====================== CORS CONFIG ======================
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "https://kelas-guru.vercel.app",
+  origin: process.env.FRONTEND_URL || "https://kelas-smk.vercel.app",
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   // Izinkan frontend mengirim header kustom 'X-Authorization'
   allowedHeaders: ['Content-Type', 'X-Authorization'],

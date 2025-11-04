@@ -18,7 +18,7 @@ export const getModules = async (req, res) => {
       // Mencari title yang mengandung string 'search' (case-insensitive)
       query.title = { $regex: search, $options: "i" };
     }
-    const modules = await Modul.find(query);
+    const modules = await Modul.find(query).sort({ order: 1 });
     res.status(200).json(modules);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -300,5 +300,36 @@ export const deleteModul = async (req, res) => {
   } catch (error) {
     console.error("Error deleting modul:", error);
     res.status(500).json({ message: "Terjadi kesalahan server saat menghapus modul" });
+  }
+};
+
+/**
+ * @desc    Update the order of modules
+ * @route   PUT /api/modul/update-order
+ * @access  Private/Admin
+ */
+export const updateModulOrder = async (req, res) => {
+  try {
+    const { orderedIds } = req.body; // Mengharapkan array berisi ID modul
+
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ message: "Data urutan tidak valid." });
+    }
+
+    // Membuat array operasi update untuk bulkWrite
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } },
+      },
+    }));
+
+    // Menjalankan operasi bulk write untuk efisiensi
+    await Modul.bulkWrite(bulkOps);
+
+    res.status(200).json({ message: "Urutan modul berhasil diperbarui." });
+  } catch (error) {
+    console.error("Error updating modul order:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server." });
   }
 };
