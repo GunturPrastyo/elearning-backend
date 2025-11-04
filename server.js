@@ -19,11 +19,23 @@ dotenv.config();
 const app = express();
 
 // ====================== CORS CONFIG ======================
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "https://kelas-smk.vercel.app",
+  "http://localhost:3000", // Untuk development lokal
+];
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "https://kelas-smk.vercel.app",
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  origin: function (origin, callback) {
+    // Izinkan request jika origin ada di dalam whitelist atau jika request tidak memiliki origin (seperti dari Postman)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   // Izinkan frontend mengirim header kustom 'X-Authorization'
-  allowedHeaders: ['Content-Type', 'X-Authorization'],
+  allowedHeaders: ["Content-Type", "X-Authorization"],
   credentials: true,
 };
 

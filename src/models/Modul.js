@@ -6,6 +6,7 @@ const modulSchema = new mongoose.Schema({
   category: { type: String, required: true },
   overview: { type: String, required: true },
   slug: { type: String, required: true, unique: true },
+  order: { type: Number, default: 0, index: true }, // Tambahkan baris ini
 });
 
 export default mongoose.model("Modul", modulSchema);
