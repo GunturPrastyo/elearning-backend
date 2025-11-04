@@ -10,7 +10,7 @@ import {
   updateModulOrder, // <-- Impor fungsi baru
 } from "../controllers/modulController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js"; // Asumsi middleware ada di sini
-import upload from "../middlewares/multerMiddleware.js"; // Asumsi middleware upload ada di sini
+import upload from "../middlewares/upload.js"; // Asumsi middleware upload ada di sini
 
 const router = express.Router();
 
