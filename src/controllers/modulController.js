@@ -125,6 +125,8 @@ export const getModuleDetailsForUser = async (req, res) => {
     const topicsDetails = await Topik.aggregate([
       // Match topik untuk modul yang spesifik
       { $match: { modulId: new mongoose.Types.ObjectId(modul._id) } },
+      // Urutkan topik berdasarkan field 'order'
+      { $sort: { order: 1 } },
       // Ambil materi terkait
       {
         $lookup: {

@@ -1,13 +1,21 @@
 import mongoose from "mongoose";
 
-const TopikSchema = new mongoose.Schema(
+const topikSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
-    modulId: { type: mongoose.Schema.Types.ObjectId, ref: "Modul", required: true }
-
+    modulId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Modul",
+      required: true,
+    },
+    order: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
 
-export default mongoose.models.Topik || mongoose.model("Topik", TopikSchema);
+const Topik = mongoose.model("Topik", topikSchema);
+export default Topik;

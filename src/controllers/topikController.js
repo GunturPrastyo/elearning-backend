@@ -6,7 +6,7 @@ import Modul from "../models/Modul.js";
 // Ambil semua topik
 export const getTopik = async (req, res) => {
   try {
-    const topikList = await Topik.find().populate("modulId"); // bisa populate modul
+    const topikList = await Topik.find().populate("modulId").sort({ order: 1 });
     res.status(200).json(topikList);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -17,7 +17,7 @@ export const getTopik = async (req, res) => {
 export const getTopikByModul = async (req, res) => {
   try {
     const { modulId } = req.params;
-    const topikList = await Topik.find({ modulId }).populate("modulId");
+    const topikList = await Topik.find({ modulId }).populate("modulId").sort({ order: 1 });
 
     // Jika kosong, tetap kirim array kosong (bukan 404)
     if (!topikList || topikList.length === 0) {
@@ -72,12 +72,16 @@ export const createTopik = async (req, res) => {
       slug = `${slug}-${Date.now()}`;
     }
 
-    const topik = new Topik({ title, slug, modulId });
+    // Hitung jumlah topik yang sudah ada di modul ini untuk menentukan urutan
+    const topicCount = await Topik.countDocuments({ modulId });
+
+    const topik = new Topik({ title, slug, modulId, order: topicCount });
     await topik.save();
 
     res.status(201).json(topik);
   } catch (err) {
     console.error("Error saat membuat topik:", err);
+    // Hapus console.log duplikat
     res.status(500).json({ message: "Gagal membuat topik: " + err.message });
   }
 };
@@ -93,5 +97,33 @@ export const deleteTopik = async (req, res) => {
     res.status(200).json({ message: "Topik berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * @desc    Update the order of topics within a module
+ * @route   PUT /api/topik/update-order
+ * @access  Private/Admin
+ */
+export const updateTopikOrder = async (req, res) => {
+  try {
+    const { orderedIds } = req.body; // Mengharapkan array berisi ID topik
+
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ message: "Data urutan tidak valid." });
+    }
+
+    // Membuat array operasi update untuk bulkWrite
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } },
+      },
+    }));
+
+    await Topik.bulkWrite(bulkOps);
+    res.status(200).json({ message: "Urutan topik berhasil diperbarui." });
+  } catch (error) {
+    res.status(500).json({ message: "Terjadi kesalahan server saat memperbarui urutan topik." });
   }
 };
