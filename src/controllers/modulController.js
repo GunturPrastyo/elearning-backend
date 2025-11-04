@@ -36,6 +36,10 @@ export const getModulesWithProgress = async (req, res) => {
     const objectUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
 
     const modulesWithProgress = await Modul.aggregate([
+      // 0. Urutkan modul berdasarkan field 'order'
+      {
+        $sort: { order: 1 }
+      },
       // 1. Ambil semua topik yang berelasi
       {
         $lookup: {
@@ -75,6 +79,7 @@ export const getModulesWithProgress = async (req, res) => {
           overview: 1,
           category: 1,
           icon: 1,
+          order: 1,
           totalTopics: { $size: "$topics" },
           completedTopics: { $size: "$userCompletions" },
           firstTopicTitle: { $ifNull: [{ $arrayElemAt: ["$topics.title", 0] }, null] },
