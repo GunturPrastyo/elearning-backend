@@ -287,12 +287,14 @@ export const deleteModul = async (req, res) => {
       }
     }
 
-    // Hapus semua topik dan materi yang terkait (cascading delete)
+    // Hapus semua data yang terkait dengan modul ini (cascading delete)
     await Topik.deleteMany({ modulId: id });
     await Materi.deleteMany({ modulId: id });
+    await Question.deleteMany({ modulId: id });
+    await Result.deleteMany({ modulId: id });
 
     // Hapus modul dari database
-    await modul.deleteOne();
+    await Modul.findByIdAndDelete(id);
 
     res.status(200).json({ message: "Modul dan semua data terkait berhasil dihapus" });
   } catch (error) {
