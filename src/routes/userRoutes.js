@@ -8,8 +8,11 @@ import {
   updateUserProfile,
   changePassword,
   completeTopic,
+  getAllUsers,
+  createUser,
+  deleteUser,
 } from "../controllers/userController.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, admin } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/upload.js";
 
 const router = express.Router();
@@ -26,5 +29,12 @@ router.put("/profile", protect, upload.single("avatar"), updateUserProfile);
 router.put("/change-password", protect, changePassword);
 
 router.post("/complete-topic", protect, completeTopic);
+
+// Rute Admin (Dilindungi oleh middleware 'protect' dan 'admin')
+router.route("/")
+  .get(protect, admin, getAllUsers)    // GET /api/users
+  .post(protect, admin, createUser);   // POST /api/users
+
+router.route("/:id").delete(protect, admin, deleteUser); // DELETE /api/users/:id
 
 export default router;
