@@ -520,10 +520,18 @@ export const getAnalytics = async (req, res) => {
       {
         $project: {
           _id: 0,
+          topicId: "$topikDetails._id",
           title: "$topikDetails.title",
+          topicSlug: "$topikDetails.slug",
           score: "$latestScore",
+          modulSlug: { $ifNull: ["$modulDetails.slug", ""] },
         },
       },
+      {
+        $lookup: {
+          from: "moduls", localField: "topikDetails.modulId", foreignField: "_id", as: "modulDetails"
+        }
+      }
     ]);
 
     const weakestTopic = weakestTopicResult.length > 0 ? weakestTopicResult[0] : null;
@@ -536,6 +544,100 @@ export const getAnalytics = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching analytics:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
+
+/**
+ * @desc    Get aggregated analytics data for the admin dashboard
+ * @route   GET /api/results/admin-analytics
+ * @access  Private (Admin)
+ */
+export const getAdminAnalytics = async (req, res) => {
+  try {
+    // --- 1. Total Jam Belajar (Semua User) ---
+    const totalStudyTimeResult = await Result.aggregate([
+      { $match: { testType: 'study-session' } },
+      { $group: { _id: null, totalSeconds: { $sum: "$timeTaken" } } },
+    ]);
+    const totalStudyHours = totalStudyTimeResult.length > 0 ? Math.floor(totalStudyTimeResult[0].totalSeconds / 3600) : 0;
+
+    // --- 2. Rata-rata Progres Belajar (Semua User) ---
+    const allUsersProgress = await User.aggregate([
+      { $project: { totalCompletions: { $size: { $ifNull: ["$topicCompletions", []] } } } }
+    ]);
+    const totalTopics = await Topik.countDocuments();
+    const averageProgress = totalTopics > 0 && allUsersProgress.length > 0
+      ? Math.round(
+        (allUsersProgress.reduce((sum, user) => sum + user.totalCompletions, 0) / (allUsersProgress.length * totalTopics)) * 100
+      )
+      : 0;
+
+    // --- 3. Rata-rata Skor Keseluruhan (Semua User) ---
+    const overallAverageScoreResult = await Result.aggregate([
+      { $match: { testType: "post-test-topik" } },
+      { $group: { _id: null, averageScore: { $avg: "$score" } } },
+    ]);
+    const overallAverageScore = overallAverageScoreResult.length > 0 ? parseFloat(overallAverageScoreResult[0].averageScore.toFixed(1)) : 0;
+
+    // --- 4. Total Pengguna Terdaftar ---
+    const totalUsers = await User.countDocuments();
+
+    // --- 5. Topik Paling Sulit (Skor Rata-rata Terendah) ---
+    const hardestTopicResult = await Result.aggregate([
+      { $match: { testType: "post-test-topik" } },
+      {
+        $group: {
+          _id: "$topikId",
+          averageScore: { $avg: "$score" },
+          attempts: { $sum: 1 }
+        }
+      },
+      { $match: { attempts: { $gte: 3 } } }, // Hanya pertimbangkan topik yang sudah dikerjakan minimal 3 kali
+      { $sort: { averageScore: 1 } },
+      { $limit: 1 },
+      {
+        $lookup: {
+          from: "topiks",
+          localField: "_id",
+          foreignField: "_id",
+          as: "topikDetails"
+        }
+      },
+      { $unwind: { path: "$topikDetails", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "moduls",
+          localField: "topikDetails.modulId",
+          foreignField: "_id",
+          as: "modulDetails"
+        }
+      },
+      { $unwind: { path: "$modulDetails", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          topicId: "$topikDetails._id",
+          topicTitle: "$topikDetails.title",
+          topicSlug: "$topikDetails.slug",
+          moduleSlug: "$modulDetails.slug",
+          averageScore: { $round: ["$averageScore", 1] }
+        }
+      }
+    ]);
+
+    const weakestTopicOverall = hardestTopicResult.length > 0 ? hardestTopicResult[0] : null;
+
+    res.status(200).json({
+      totalStudyHours,
+      averageProgress,
+      overallAverageScore,
+      totalUsers,
+      weakestTopicOverall,
+    });
+
+  } catch (error) {
+    console.error("Error fetching admin analytics:", error);
     res.status(500).json({ message: "Terjadi kesalahan pada server." });
   }
 };
