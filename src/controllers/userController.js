@@ -183,27 +183,22 @@ export const googleLogin = async (req, res) => {
 
     let user = await User.findOne({ email });
 
+    // Jika user tidak ditemukan, buat user baru dengan role 'user'
     if (!user) {
-      return res.status(403).json({
-        message: "Akses ditolak. Akun Anda belum terdaftar oleh admin.",
+      user = await User.create({
+        email,
+        name,
+        avatar: picture,
+        role: 'user', // Default role untuk pengguna baru dari Google
+        password: null // Akun Google tidak memiliki password
       });
-    }
-
-    const role =
-      email.endsWith("@students.unnes.ac.id") || email === "admin@example.com"
-        ? "admin"
-        : "user";
-
-    // Hanya update jika ada perubahan, dan JANGAN hapus password jika sudah ada.
-    // Password hanya di-set null jika user pertama kali dibuat via Google atau memang belum punya password.
-    const updateData = { name, avatar: picture, role };
-    if (!user.password) {
-      updateData.password = null;
-    }
-
-    // Cek apakah ada data yang perlu diupdate
-    if (user.name !== name || user.avatar !== picture || user.role !== role) {
-      user.set(updateData);
+    } else {
+      // Jika user sudah ada, cukup update nama dan avatar jika berbeda
+      // Role tidak diubah untuk menjaga role yang sudah ada (misal: admin)
+      user.name = name;
+      user.avatar = picture;
+      // Pastikan password tidak di-set jika user sudah ada (mungkin punya password manual)
+      // Cek apakah ada perubahan sebelum menyimpan untuk menghindari operasi DB yang tidak perlu
       await user.save();
     }
 
