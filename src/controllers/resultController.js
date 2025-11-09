@@ -1006,12 +1006,16 @@ export const getLearningRecommendations = async (req, res) => {
         else if (preTestResult.score >= 40) userLevel = 'sedang';
         else userLevel = 'mudah';
 
+        // Urutkan semua modul berdasarkan 'order'
+        const sortedModules = [...modulesWithCompletion].sort((a, b) => (a.order || 0) - (b.order || 0));
+
         // Prioritas 1: Cari modul yang direkomendasikan dan sedang berjalan (in-progress)
-        let recommendedModule = modulesWithCompletion.find(m => m.category === userLevel && m.progress > 0 && m.progress < 100);
+        // Sekarang mencari dari modul yang sudah diurutkan
+        let recommendedModule = sortedModules.find(m => m.category === userLevel && m.progress > 0 && m.progress < 100);
 
         // Prioritas 2: Jika tidak ada, cari modul yang direkomendasikan dan belum dimulai
         if (!recommendedModule) {
-            recommendedModule = modulesWithCompletion.find(m => m.category === userLevel && m.progress === 0);
+            recommendedModule = sortedModules.find(m => m.category === userLevel && m.progress === 0);
         }
 
         if (recommendedModule) {
