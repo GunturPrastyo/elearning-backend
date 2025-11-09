@@ -516,6 +516,8 @@ export const getAnalytics = async (req, res) => {
       { $unwind: { path: "$topikDetails", preserveNullAndEmptyArrays: true } },
       // Pindahkan lookup modul ke sini agar bisa diakses di $project
       {
+        // Use unwind with preserve so that if a topic is deleted, it doesn't crash
+        $unwind: { path: "$topikDetails", preserveNullAndEmptyArrays: true },
         $lookup: {
           from: "moduls",
           localField: "topikDetails.modulId",
@@ -530,10 +532,17 @@ export const getAnalytics = async (req, res) => {
           topicId: "$topikDetails._id",
           title: "$topikDetails.title",
           topicSlug: "$topikDetails.slug",
+          score: "$latestScore",
+          modulSlug: { $ifNull: ["$modulDetails.slug", ""] },
           score: { $round: ["$latestScore", 2] },
           modulSlug: { $ifNull: ["$modulDetails.slug", ""] }, // Sekarang modulDetails sudah ada
         },
       },
+      {
+        $lookup: {
+          from: "moduls", localField: "topikDetails.modulId", foreignField: "_id", as: "modulDetails"
+        }
+      }
     ]);
 
     const weakestTopic = weakestTopicResult.length > 0 ? weakestTopicResult[0] : null;
@@ -967,7 +976,7 @@ export const getLearningRecommendations = async (req, res) => {
       { $unwind: { path: "$topikDetails", preserveNullAndEmptyArrays: true } },
       { $lookup: { from: "moduls", localField: "topikDetails.modulId", foreignField: "_id", as: "modulDetails" } },
       { $unwind: { path: "$modulDetails", preserveNullAndEmptyArrays: true } },
-        { $project: { _id: 0, topicId: { $toString: "$topicDetails._id" }, topicTitle: "$topicDetails.title", topicSlug: "$topicDetails.slug", modulSlug: "$modulDetails.slug", score: { $round: ["$latestScore", 2] } } }
+        { $project: { _id: 0, topicId: "$topicDetails._id", topicTitle: "$topikDetails.title", topicSlug: "$topikDetails.slug", modulSlug: "$modulDetails.slug", score: { $round: ["$latestScore", 2] } } }
     ]);
 
     let deepenTopic = null;
