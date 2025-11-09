@@ -984,8 +984,8 @@ export const getLearningRecommendations = async (req, res) => {
         { $lookup: { from: "topiks", localField: "_id", foreignField: "modulId", as: "topics" } },
         {
             $project: {
-                _id: 1, title: 1, slug: 1, icon: 1, category: 1,
-                topics: { _id: 1, title: 1, slug: 1 },
+                _id: 1, title: 1, slug: 1, icon: 1, category: 1, order: 1, // Tambahkan order modul
+                topics: { _id: 1, title: 1, slug: 1, order: 1 }, // Tambahkan order topik
                 totalTopics: { $size: "$topics" },
             }
         }
@@ -1016,7 +1016,9 @@ export const getLearningRecommendations = async (req, res) => {
 
         if (recommendedModule) {
             // Cari topik pertama yang belum selesai di modul yang direkomendasikan
-            const nextTopicInRecommendedModule = recommendedModule.topics.find(
+            // Urutkan topik berdasarkan 'order' sebelum mencari yang belum selesai
+            const sortedTopics = [...recommendedModule.topics].sort((a, b) => a.order - b.order);
+            const nextTopicInRecommendedModule = sortedTopics.find(
                 t => !user.topicCompletions.some(ct => ct.equals(t._id))
             );
 
