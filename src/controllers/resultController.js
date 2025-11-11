@@ -124,7 +124,7 @@ export const submitTest = async (req, res) => {
     }
 
     // Jika post-test topik lulus, lakukan beberapa update:
-    if (testType === "post-test-topik" && topikId && finalScore >= 70) {
+    if (testType === "post-test-topik" && topikId && finalScore >= 70) { // Batas kelulusan sudah 70
       // 1. Tambahkan ID topik ke progres user
       await User.findByIdAndUpdate(userId, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
@@ -493,10 +493,10 @@ export const getAnalytics = async (req, res) => {
           latestTopikId: { $first: "$topikId" }, // Keep the topikId
         },
       },
-      // Tambahkan filter: hanya anggap topik "lemah" jika skornya di bawah 80
+      // Tambahkan filter: hanya anggap topik "lemah" jika skornya di bawah 70
       {
         $match: {
-          latestScore: { $lt: 80 },
+          latestScore: { $lt: 70 },
         },
       },
       {
@@ -914,7 +914,7 @@ export const getLearningRecommendations = async (req, res) => {
     ]);
 
     let repeatModule = null;
-    if (weakestModuleResult.length > 0 && weakestModuleResult[0].score < 80) {
+    if (weakestModuleResult.length > 0 && weakestModuleResult[0].score < 70) {
       const weakestModule = weakestModuleResult[0];
 
       // Cek apakah semua topik di modul ini sudah dikuasai
@@ -927,7 +927,7 @@ export const getLearningRecommendations = async (req, res) => {
         { $group: { _id: "$topikId", latestScore: { $first: "$score" } } },
       ]);
 
-      const allTopicsMastered = topicIdsInModule.length > 0 && topicScores.length === topicIdsInModule.length && topicScores.every(s => s.latestScore >= 80);
+      const allTopicsMastered = topicIdsInModule.length > 0 && topicScores.length === topicIdsInModule.length && topicScores.every(s => s.latestScore >= 70);
 
       let weakestTopicInModuleResult = [];
       if (!allTopicsMastered) {
@@ -971,8 +971,8 @@ export const getLearningRecommendations = async (req, res) => {
     ]);
 
     let deepenTopic = null;
-    // Hanya tampilkan rekomendasi ini jika ada topik terlemah DAN nilainya di bawah 80
-    if (weakestOverallTopicResult.length > 0 && weakestOverallTopicResult[0].score < 80) {
+    // Hanya tampilkan rekomendasi ini jika ada topik terlemah DAN nilainya di bawah 70
+    if (weakestOverallTopicResult.length > 0 && weakestOverallTopicResult[0].score < 70) {
       deepenTopic = {
         ...weakestOverallTopicResult[0]
       };
@@ -1091,7 +1091,7 @@ export const getTopicsToReinforce = async (req, res) => {
             $switch: {
               branches: [
                 { case: { $lt: ["$latestScore", 60] }, then: "Perlu review" },
-                { case: { $lt: ["$latestScore", 80] }, then: "Butuh latihan" },
+                { case: { $lt: ["$latestScore", 70] }, then: "Butuh latihan" },
               ],
               default: "Sudah bagus",
             },
