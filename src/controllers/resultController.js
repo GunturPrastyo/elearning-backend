@@ -124,7 +124,7 @@ export const submitTest = async (req, res) => {
     }
 
     // Jika post-test topik lulus, lakukan beberapa update:
-    if (testType === "post-test-topik" && topikId && finalScore >= 80) {
+    if (testType === "post-test-topik" && topikId && finalScore >= 70) {
       // 1. Tambahkan ID topik ke progres user
       await User.findByIdAndUpdate(userId, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
@@ -1030,7 +1030,7 @@ export const getLearningRecommendations = async (req, res) => {
                 moduleTitle: recommendedModule.title,
                 moduleSlug: recommendedModule.slug,
                 moduleIcon: recommendedModule.icon,
-                nextTopic: nextTopicInRecommendedModule ? { title: nextTopicInRecommendedModule.title, id: nextTopicInRecommendedModule._id } : null,
+                nextTopic: nextTopicInRecommendedModule ? { title: nextTopicInRecommendedModule.title, id: nextTopicInRecommendedModule._id.toString() } : null,
             };
         }
     }
