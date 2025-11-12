@@ -13,12 +13,25 @@ import Topik from "../models/Topik.js";
  */
 export const createResult = async (req, res) => {
   try {
-    const { testType, score, correct, total, timeTaken, modulId } = req.body;
+    const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
 
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
+
+    // Kalkulasi rincian skor, sama seperti di submitTest
+    const accuracyScore = score; // score di pre-test adalah accuracy
+    const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
+    const timeScore = timeEfficiency * 100;
+
+    // Untuk pre-test, asumsikan stabilitas dan fokus 100% karena tidak dilacak
+    const scoreDetails = {
+      accuracy: parseFloat(accuracyScore.toFixed(2)),
+      time: parseFloat(timeScore.toFixed(2)),
+      stability: 100,
+      focus: 100,
+    };
 
     const newResult = new Result({
       userId,
@@ -26,6 +39,7 @@ export const createResult = async (req, res) => {
       score,
       correct,
       total,
+      scoreDetails, // <-- Tambahkan rincian skor di sini
       timeTaken,
       ...(modulId && { modulId }), // Hanya tambahkan modulId jika ada
     });
@@ -50,12 +64,12 @@ export const createResult = async (req, res) => {
 export const submitTest = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { testType, modulId, topikId, answers, timeTaken } = req.body;
+    const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits } = req.body;
 
     if (!testType || !answers || Object.keys(answers).length === 0 || timeTaken === undefined) {
       return res.status(400).json({ message: "Data jawaban tidak lengkap." });
     }
-
+    
     const questionIds = Object.keys(answers);
     const questions = await Question.find({
       _id: { $in: questionIds },
@@ -74,8 +88,40 @@ export const submitTest = async (req, res) => {
     });
 
     const totalQuestions = questions.length;
-    // Bulatkan skor menjadi 2 angka desimal
-    const score = totalQuestions > 0 ? parseFloat(((correctAnswers / totalQuestions) * 100).toFixed(2)) : 0;
+    const totalDuration = questions.reduce((acc, q) => acc + (q.durationPerQuestion || 60), 0);
+
+    // --- Kalkulasi Skor Berdasarkan 4 Komponen ---
+
+    // 1. Skor Ketepatan Jawaban (Sₜ) - Bobot 60%
+    const accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+
+    // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 15%
+    // Semakin cepat, semakin tinggi skornya. Jika waktu > total durasi, skor = 0.
+    const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
+    const timeScore = timeEfficiency * 100;
+
+    // 3. Skor Perubahan Jawaban (S𝑐) - Bobot 10%
+    // Semakin sedikit perubahan, semakin tinggi skornya. Maksimal perubahan ditoleransi = jumlah soal.
+    const changes = answerChanges || 0;
+    const changePenalty = totalQuestions > 0 ? Math.min(changes / totalQuestions, 1) : 0;
+    const answerStabilityScore = (1 - changePenalty) * 100;
+
+    // 4. Skor Tab Keluar Halaman (S𝑏) - Bobot 15%
+    // Semakin sedikit keluar tab, semakin tinggi skornya. Toleransi 3x keluar tab.
+    const exits = tabExits || 0;
+    const focusPenalty = exits > 3 ? 1 : exits / 3;
+    const focusScore = (1 - focusPenalty) * 100;
+
+    // Kalkulasi Skor Akhir (Final Score)
+    const finalScore = parseFloat(((accuracyScore * 0.60) + (timeScore * 0.15) + (answerStabilityScore * 0.10) + (focusScore * 0.15)).toFixed(2));
+
+    // Siapkan objek rincian skor untuk disimpan
+    const scoreDetails = {
+      accuracy: parseFloat(accuracyScore.toFixed(2)),
+      time: parseFloat(timeScore.toFixed(2)),
+      stability: parseFloat(answerStabilityScore.toFixed(2)),
+      focus: parseFloat(focusScore.toFixed(2)),
+    };
 
     // --- Analisis Sub Topik Lemah (hanya untuk post-test-topik) ---
     // Analisis ini dilakukan pada percobaan saat ini, sebelum memutuskan apakah akan disimpan atau tidak.
@@ -122,7 +168,7 @@ export const submitTest = async (req, res) => {
     }
 
     let result;
-    let finalScore = score; // Inisialisasi skor akhir dengan skor saat ini
+    let bestScore = finalScore; // Inisialisasi skor akhir dengan skor saat ini
 
     // Logika untuk mengambil nilai terbaik pada post-test topik
     if (testType === "post-test-topik" && topikId) {
@@ -130,14 +176,15 @@ export const submitTest = async (req, res) => {
       const existingResult = await Result.findOne({ userId, topikId, testType: "post-test-topik" });
 
       // 2. Bandingkan skor. Hanya update jika tidak ada hasil atau skor baru lebih tinggi.
-      if (!existingResult || score > existingResult.score) {
+      if (!existingResult || finalScore > existingResult.score) {
         // Jika skor baru lebih baik, perbarui/buat data baru
         result = await Result.findOneAndUpdate(
           { userId, topikId, testType: "post-test-topik" },
           {
-            userId, testType, score,
+            userId, testType, score: finalScore, // FIX: Simpan finalScore, bukan accuracyScore
             correct: correctAnswers,
             total: totalQuestions,
+            scoreDetails, // Simpan rincian skor
             answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], subMateriId: q.subMateriId })),
             weakSubTopics, // Simpan hasil analisis sub topik lemah
             timeTaken,
@@ -147,21 +194,22 @@ export const submitTest = async (req, res) => {
           },
           { new: true, upsert: true, setDefaultsOnInsert: true }
         );
-        finalScore = score;
+        bestScore = finalScore;
         // `result` sekarang berisi `weakSubTopics` yang sudah disimpan dari percobaan terbaik ini.
       } else {
         // Jika skor baru tidak lebih baik, kembalikan hasil lama yang lebih bagus.
-        finalScore = existingResult.score;
+        bestScore = existingResult.score;
         // Jangan ubah `result` di sini. Cukup gunakan `existingResult` apa adanya.
         // Kita akan menambahkan `weakSubTopics` dari percobaan saat ini ke respons JSON secara terpisah.
         result = existingResult;
       }
     } else {
       // Untuk tipe tes lain (misalnya pre-test), selalu buat hasil baru.
-      const newResult = new Result({
-        userId, testType, score,
+      result = await new Result({
+        userId, testType, score: finalScore, // FIX: Simpan finalScore, bukan accuracyScore
         correct: correctAnswers,
         total: totalQuestions,
+        scoreDetails, // Simpan rincian skor
         answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], subMateriId: q.subMateriId })),
         // weakSubTopics hanya relevan untuk post-test-topik, jadi biarkan kosong untuk tipe lain.
         weakSubTopics: [],
@@ -169,13 +217,12 @@ export const submitTest = async (req, res) => {
         ...(modulId && { modulId }),
         ...(topikId && { topikId }),
         timestamp: new Date(),
-      });
-      result = await newResult.save()
-      finalScore = score;
+      }).save();
+      bestScore = finalScore;
     }
     
     // Jika post-test topik lulus, lakukan beberapa update:
-    if (testType === "post-test-topik" && topikId && finalScore >= 70) { // Pastikan batas kelulusan konsisten 70
+    if (testType === "post-test-topik" && topikId && bestScore >= 70) { // Pastikan batas kelulusan konsisten 70
       // 1. Tambahkan ID topik ke progres user
       await User.findByIdAndUpdate(req.user._id, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
@@ -191,7 +238,12 @@ export const submitTest = async (req, res) => {
       message: "Jawaban berhasil disubmit.",
       // Pastikan data yang dikembalikan adalah objek biasa, bukan dokumen Mongoose
       // dan selalu sertakan analisis weakSubTopics dari pengerjaan saat ini untuk feedback langsung.
-      data: result.toObject ? { ...result.toObject(), weakSubTopics } : { ...result, weakSubTopics }
+      data: {
+        ...(result.toObject ? result.toObject() : result),
+        weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini
+        score: bestScore, // Pastikan skor yang dikirim adalah skor terbaik
+        scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
+      }
     });
   } catch (error) {
     console.error("Gagal submit tes:", error);
@@ -255,7 +307,8 @@ export const saveProgress = async (req, res) => {
       },
       {
         $set: {
-          answers: Object.entries(answers || {}).map(([questionId, selectedOption]) => ({
+          // Simpan ke field `progressAnswers` yang baru
+          progressAnswers: Object.entries(answers || {}).map(([questionId, selectedOption]) => ({
             questionId,
             selectedOption,
           })),

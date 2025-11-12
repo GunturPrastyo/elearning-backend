@@ -12,6 +12,13 @@ const weakSubTopicSchema = new mongoose.Schema({
   score: Number
 }, { _id: false });
 
+const scoreDetailsSchema = new mongoose.Schema({
+  accuracy: { type: Number },
+  time: { type: Number },
+  stability: { type: Number },
+  focus: { type: Number },
+}, { _id: false });
+
 const progressAnswerSchema = new mongoose.Schema({
   questionId: String, selectedOption: String
 }, { _id: false });
@@ -60,16 +67,24 @@ const resultSchema = new mongoose.Schema(
     },
     // --- Field Baru yang Ditambahkan ---
     answers: {
-      type: [mongoose.Schema.Types.Mixed], // Gunakan Mixed untuk mengakomodasi dua skema
-      default: undefined,
+      type: [answerSchema], // Skema untuk jawaban tes yang sudah disubmit
+      default: undefined, 
     },
     weakSubTopics: {
       type: [weakSubTopicSchema],
       default: undefined,
     },
+    scoreDetails: {
+      type: scoreDetailsSchema,
+      default: undefined,
+    },
     currentIndex: { // Untuk menyimpan progress nomor soal
       type: Number,
     },
+    progressAnswers: { // Field terpisah untuk progress
+      type: [progressAnswerSchema],
+      default: undefined,
+    }
   },
   { timestamps: true }
 ); // timestamps akan menambahkan createdAt dan updatedAt
