@@ -18,7 +18,7 @@ import {
     getProgress, 
     getLatestResultByTopic,
     getLatestResultByType,
-    deleteProgress // Import controller yang hilang
+    deleteProgress, // Import controller yang hilang
 } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 

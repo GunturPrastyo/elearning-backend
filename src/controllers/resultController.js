@@ -2,6 +2,7 @@ import Result from "../models/Result.js";
 import User from "../models/User.js";
 import Question from "../models/Question.js";
 import mongoose from "mongoose";
+import Materi from "../models/Materi.js";
 import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
 
@@ -76,6 +77,50 @@ export const submitTest = async (req, res) => {
     // Bulatkan skor menjadi 2 angka desimal
     const score = totalQuestions > 0 ? parseFloat(((correctAnswers / totalQuestions) * 100).toFixed(2)) : 0;
 
+    // --- Analisis Sub Topik Lemah (hanya untuk post-test-topik) ---
+    // Analisis ini dilakukan pada percobaan saat ini, sebelum memutuskan apakah akan disimpan atau tidak.
+    let weakSubTopics = [];
+    if (testType === "post-test-topik") {
+      const subTopicAnalysis = {}; // { subMateriId: { correct: 0, total: 0 } }
+
+      // 1. Kelompokkan jawaban berdasarkan subMateriId dari soal yang dikerjakan
+      questions.forEach(q => {
+        if (q.subMateriId) {
+          const subId = q.subMateriId.toString();
+          if (!subTopicAnalysis[subId]) {
+            subTopicAnalysis[subId] = { correct: 0, total: 0 };
+          }
+          subTopicAnalysis[subId].total++;
+          if (answers[q._id.toString()] === q.answer) {
+            subTopicAnalysis[subId].correct++;
+          }
+        }
+      });
+
+      // 2. Hitung skor per sub-topik dan filter yang lemah (di bawah 70%)
+      const weakSubTopicDetails = [];
+      for (const subId in subTopicAnalysis) {
+        const analysis = subTopicAnalysis[subId];
+        const subTopicScore = analysis.total > 0 ? (analysis.correct / analysis.total) * 100 : 0;
+        if (subTopicScore < 70) {
+          weakSubTopicDetails.push({ subId, score: parseFloat(subTopicScore.toFixed(2)) });
+        }
+      }
+      const weakSubTopicIds = weakSubTopicDetails.map(d => d.subId);
+
+      if (weakSubTopicIds.length > 0) {
+        // 3. Ambil detail (judul) dari sub-topik yang lemah
+        const materiWithWeakSubTopics = await Materi.findOne({ topikId: new mongoose.Types.ObjectId(topikId) });
+        if (
+          materiWithWeakSubTopics &&
+          materiWithWeakSubTopics.subMateris
+        ) {
+          const weakSubTopicsMap = new Map(weakSubTopicDetails.map(d => [d.subId, d.score]));
+          weakSubTopics = materiWithWeakSubTopics.subMateris.filter(sub => weakSubTopicIds.includes(sub._id.toString())).map(sub => ({ subMateriId: sub._id, title: sub.title, score: weakSubTopicsMap.get(sub._id.toString()) }));
+        }
+      }
+    }
+
     let result;
     let finalScore = score; // Inisialisasi skor akhir dengan skor saat ini
 
@@ -93,7 +138,8 @@ export const submitTest = async (req, res) => {
             userId, testType, score,
             correct: correctAnswers,
             total: totalQuestions,
-            answers: Object.entries(answers).map(([questionId, selectedOption]) => ({ questionId, selectedOption })),
+            answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], subMateriId: q.subMateriId })),
+            weakSubTopics, // Simpan hasil analisis sub topik lemah
             timeTaken,
             modulId,
             topikId,
@@ -102,38 +148,38 @@ export const submitTest = async (req, res) => {
           { new: true, upsert: true, setDefaultsOnInsert: true }
         );
         finalScore = score;
+        // `result` sekarang berisi `weakSubTopics` yang sudah disimpan dari percobaan terbaik ini.
       } else {
-        // Jika skor baru tidak lebih baik, jangan update DB.
-        // Kembalikan saja hasil lama yang lebih bagus.
-        result = existingResult;
+        // Jika skor baru tidak lebih baik, kembalikan hasil lama yang lebih bagus.
         finalScore = existingResult.score;
+        // Jangan ubah `result` di sini. Cukup gunakan `existingResult` apa adanya.
+        // Kita akan menambahkan `weakSubTopics` dari percobaan saat ini ke respons JSON secara terpisah.
+        result = existingResult;
       }
     } else {
-      // Untuk tipe tes lain (pre-test, post-test modul), selalu buat hasil baru.
+      // Untuk tipe tes lain (misalnya pre-test), selalu buat hasil baru.
       const newResult = new Result({
         userId, testType, score,
         correct: correctAnswers,
         total: totalQuestions,
-        answers: Object.entries(answers).map(([questionId, selectedOption]) => ({ questionId, selectedOption })),
+        answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], subMateriId: q.subMateriId })),
+        // weakSubTopics hanya relevan untuk post-test-topik, jadi biarkan kosong untuk tipe lain.
+        weakSubTopics: [],
         timeTaken,
         ...(modulId && { modulId }),
         ...(topikId && { topikId }),
+        timestamp: new Date(),
       });
-      result = await newResult.save();
+      result = await newResult.save()
       finalScore = score;
     }
-
+    
     // Jika post-test topik lulus, lakukan beberapa update:
-    if (testType === "post-test-topik" && topikId && finalScore >= 70) { // Batas kelulusan sudah 70
+    if (testType === "post-test-topik" && topikId && finalScore >= 70) { // Pastikan batas kelulusan konsisten 70
       // 1. Tambahkan ID topik ke progres user
-      await User.findByIdAndUpdate(userId, {
+      await User.findByIdAndUpdate(req.user._id, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
       });
-
-      // 2. (Opsional tapi direkomendasikan) Tandai topik itu sendiri sebagai selesai jika ada fieldnya
-      // Asumsi model Topik memiliki field `isCompletedByUser` atau sejenisnya.
-      // Jika tidak, logika ini bisa diskip, tapi akan lebih baik jika ada.
-      // Untuk contoh ini, kita asumsikan tidak ada dan frontend akan handle dari data user.
     }
 
     // Setelah submit, hapus progress tes yang tersimpan untuk topik ini
@@ -143,7 +189,9 @@ export const submitTest = async (req, res) => {
 
     res.status(201).json({
       message: "Jawaban berhasil disubmit.",
-      data: result,
+      // Pastikan data yang dikembalikan adalah objek biasa, bukan dokumen Mongoose
+      // dan selalu sertakan analisis weakSubTopics dari pengerjaan saat ini untuk feedback langsung.
+      data: result.toObject ? { ...result.toObject(), weakSubTopics } : { ...result, weakSubTopics }
     });
   } catch (error) {
     console.error("Gagal submit tes:", error);
@@ -308,15 +356,18 @@ export const getLatestResultByTopic = async (req, res) => {
       topikId: new mongoose.Types.ObjectId(topikId),
       testType: "post-test-topik",
     })
-      .sort({ createdAt: -1 })
-      .populate("topikId", "nama deskripsi")
-      .populate("modulId", "title");
+      .sort({ timestamp: -1 }) // Urutkan berdasarkan timestamp pengerjaan terakhir
+      .populate("topikId", "title slug") // Perbaiki field yang di-populate
+      .populate("modulId", "title slug");
 
     if (!latestResult) {
       return res.status(404).json({ message: "Belum ada hasil post-test untuk topik ini." });
     }
 
+    // Langsung kembalikan hasil dari DB, termasuk field `weakSubTopics` yang sudah tersimpan.
+    // Tidak perlu kalkulasi ulang.
     res.status(200).json(latestResult);
+
   } catch (error) {
     console.error("Gagal mengambil hasil post-test topik:", error);
     res.status(500).json({ message: "Terjadi kesalahan pada server." });
@@ -1127,5 +1178,67 @@ export const hasCompletedModulePostTest = async (userId, modulId) => {
   } catch (error) {
     console.error("Error checking module post-test completion:", error);
     return false;
+  }
+};
+
+/**
+ * @desc    Get user's performance across all sub-topics
+ * @route   GET /api/results/subtopic-performance
+ * @access  Private
+ */
+export const getSubTopicPerformance = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const performance = await Result.aggregate([
+      // 1. Ambil semua hasil post-test topik dari user
+      { $match: { userId: new mongoose.Types.ObjectId(userId), testType: "post-test-topik" } },
+      // 2. "Buka" array 'answers' agar setiap jawaban menjadi dokumen terpisah
+      { $unwind: "$answers" },
+      // 3. Pastikan jawaban memiliki subMateriId
+      { $match: { "answers.subMateriId": { $exists: true, $ne: null } } },
+      // 4. Lookup ke koleksi 'questions' untuk mendapatkan jawaban yang benar
+      {
+        $lookup: {
+          from: "questions",
+          localField: "answers.questionId",
+          foreignField: "_id",
+          as: "questionDetails"
+        }
+      },
+      { $unwind: "$questionDetails" },
+      // 5. Kelompokkan berdasarkan subMateriId dan hitung jawaban benar & total
+      {
+        $group: {
+          _id: "$answers.subMateriId",
+          correct: {
+            $sum: {
+              $cond: [{ $eq: ["$answers.selectedOption", "$questionDetails.answer"] }, 1, 0]
+            }
+          },
+          total: { $sum: 1 }
+        }
+      },
+      // 6. Hitung skor rata-rata
+      {
+        $project: {
+          averageScore: { $round: [{ $multiply: [{ $divide: ["$correct", "$total"] }, 100] }, 2] }
+        }
+      },
+      // 7. Urutkan dari skor terendah
+      { $sort: { averageScore: 1 } },
+      // 8. Lookup ke koleksi 'materis' untuk mendapatkan judul sub-topik
+      { $lookup: { from: "materis", localField: "_id", foreignField: "subMateris._id", as: "materiDetails" } },
+      { $unwind: "$materiDetails" },
+      { $unwind: "$materiDetails.subMateris" },
+      { $match: { $expr: { $eq: ["$_id", "$materiDetails.subMateris._id"] } } },
+      // 9. Bentuk output akhir
+      { $project: { _id: 0, subTopicTitle: "$materiDetails.subMateris.title", score: "$averageScore" } }
+    ]);
+
+    res.status(200).json(performance);
+  } catch (error) {
+    console.error("Error fetching sub-topic performance:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
   }
 };

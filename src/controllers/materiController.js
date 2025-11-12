@@ -19,13 +19,17 @@ const getEmbedUrl = (url) => {
   return (match && match[1]) ? `https://www.youtube.com/embed/${match[1]}` : null;
 };
 
-const sanitizeContent = (dirty) => {
-  return DOMPurify.sanitize(dirty, {
+const sanitizeSubMateri = (subMateris) => {
+  if (!Array.isArray(subMateris)) return [];
+  return subMateris.map(sub => ({
+    ...sub,
+    content: DOMPurify.sanitize(sub.content || '', {
     // Izinkan tag tambahan untuk iframe (YouTube) dan blok kode (pre, code)
     ADD_TAGS: ["iframe", "pre", "code"],
     // Izinkan atribut yang diperlukan untuk embed video dan styling kode
     ADD_ATTR: ["style", "allow", "allowfullscreen", "frameborder", "scrolling", "src", "title", "class", "id"],
-  });
+    })
+  }));
 };
 
 /**
@@ -75,10 +79,10 @@ export const getMateriBySlugs = async (req, res) => {
  */
 export const saveMateri = async (req, res) => {
   try {
-    const { topikId, content, youtube } = req.body;
+    const { topikId, subMateris, youtube } = req.body;
 
     // Validasi sederhana
-    if (!topikId || content === undefined) {
+    if (!topikId || !subMateris) {
       return res.status(400).json({ message: "ID Topik dan konten materi diperlukan." });
     }
 
@@ -89,21 +93,21 @@ export const saveMateri = async (req, res) => {
     }
 
     // Validasi dan sanitasi URL YouTube
-    const finalYoutubeUrl = youtube ? getEmbedUrl(youtube) : null;
+    const finalYoutubeUrl = youtube ? getEmbedUrl(youtube) : null; // Helper getEmbedUrl hanya untuk validasi
     if (youtube && !finalYoutubeUrl) {
       // Jika URL diberikan tapi tidak valid, kirim error.
       return res.status(400).json({ message: "URL YouTube tidak valid." });
     }
 
     // Sanitasi konten sebelum disimpan
-    const cleanContent = sanitizeContent(content);
+    const cleanSubMateris = sanitizeSubMateri(subMateris);
 
     // Operasi "Upsert": Update jika ada, atau buat baru jika tidak ada.
     const materi = await Materi.findOneAndUpdate(
       { topikId: topik._id },
       {
-        content: cleanContent, // Data yang akan di-update atau dibuat
-        youtube: youtube || null,
+        subMateris: cleanSubMateris, // Data yang akan di-update atau dibuat
+        youtube: youtube || null, // Simpan URL asli dari input pengguna
         modulId: topik.modulId, // Pastikan modulId juga tersimpan/diperbarui
       },
       {
@@ -115,7 +119,7 @@ export const saveMateri = async (req, res) => {
 
     res.status(200).json({
       message: "Materi berhasil disimpan",
-      data: materi,
+      data: materi, // Pastikan data yang dikembalikan adalah dokumen yang baru
     });
   } catch (error) {
     console.error("Error saat menyimpan materi:", error);

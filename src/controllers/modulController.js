@@ -119,7 +119,7 @@ export const getModuleDetailsForUser = async (req, res) => {
     const user = await User.findById(userId).select('topicCompletions').lean();
     if (!user) {
       return res.status(404).json({ message: "User tidak ditemukan" });
-    }
+    } 
 
     // 2. Ambil semua topik, materi, soal, dan status penyelesaian user dalam satu query
     const topicsDetails = await Topik.aggregate([
@@ -148,15 +148,51 @@ export const getModuleDetailsForUser = async (req, res) => {
           as: "questions"
         }
       },
-      // Bentuk ulang output
+      // Lookup ke hasil tes untuk mengecek apakah sudah pernah dikerjakan
+      {
+        $lookup: {
+          from: "results",
+          let: { topik_id: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$topikId", "$$topik_id"] },
+                    { $eq: ["$userId", new mongoose.Types.ObjectId(userId)] }
+                  ]
+                }
+              }
+            }, { $limit: 1 }
+          ], as: "attempts"
+        }
+      },
+      // Bentuk ulang output dan tambahkan status penyelesaian
       {
         $addFields: {
-          materi: { $ifNull: [{ $arrayElemAt: ["$materiArr", 0] }, null] },
-          isCompleted: { $in: ["$_id", user.topicCompletions || []] }
+          materi: {
+            $ifNull: [
+              {
+                $reduce: {
+                  input: "$materiArr",
+                  initialValue: { _id: { $arrayElemAt: ["$materiArr._id", 0] }, subMateris: [], youtube: { $arrayElemAt: ["$materiArr.youtube", 0] } },
+                  in: {
+                    _id: "$$value._id",
+                    subMateris: { $concatArrays: ["$$value.subMateris", "$$this.subMateris"] },
+                    youtube: { $ifNull: ["$$this.youtube", "$$value.youtube"] }
+                  }
+                }
+              },
+              null
+            ]
+          },
+          // Gunakan data dari `user.topicCompletions` untuk menentukan status `isCompleted`
+          isCompleted: { $in: ["$_id", user.topicCompletions || []] }, 
+          hasAttempted: { $gt: [{ $size: "$attempts" }, 0] }
         }
       },
       // Hapus field yang tidak perlu
-      { $project: { materiArr: 0, completion: 0 } }
+      { $project: { materiArr: 0, completion: 0, attempts: 0 } }
     ]);
 
     // 5. Hitung progres keseluruhan modul dari hasil agregasi

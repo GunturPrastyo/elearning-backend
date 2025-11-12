@@ -1,5 +1,21 @@
 import mongoose from "mongoose";
 
+const answerSchema = new mongoose.Schema({
+  questionId: { type: mongoose.Schema.Types.ObjectId, ref: "Question" },
+  selectedOption: String,
+  subMateriId: { type: mongoose.Schema.Types.ObjectId }
+}, { _id: false });
+
+const weakSubTopicSchema = new mongoose.Schema({
+  subMateriId: { type: mongoose.Schema.Types.ObjectId },
+  title: String,
+  score: Number
+}, { _id: false });
+
+const progressAnswerSchema = new mongoose.Schema({
+  questionId: String, selectedOption: String
+}, { _id: false });
+
 const resultSchema = new mongoose.Schema(
   {
     userId: {
@@ -14,7 +30,8 @@ const resultSchema = new mongoose.Schema(
         "pre-test-global",
         "post-test-modul",
         "post-test-topik",
-        "study-session", // Tambahkan ini
+        "study-session",
+        "post-test-topik-progress", // Tambahkan tipe untuk progress
       ],
     },
     score: {
@@ -40,6 +57,18 @@ const resultSchema = new mongoose.Schema(
     topikId: { // Tambahkan field ini
       type: mongoose.Schema.Types.ObjectId,
       ref: "Topik",
+    },
+    // --- Field Baru yang Ditambahkan ---
+    answers: {
+      type: [mongoose.Schema.Types.Mixed], // Gunakan Mixed untuk mengakomodasi dua skema
+      default: undefined,
+    },
+    weakSubTopics: {
+      type: [weakSubTopicSchema],
+      default: undefined,
+    },
+    currentIndex: { // Untuk menyimpan progress nomor soal
+      type: Number,
     },
   },
   { timestamps: true }
