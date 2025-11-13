@@ -64,19 +64,27 @@ export const createResult = async (req, res) => {
 export const submitTest = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits } = req.body;
+    const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits, timePerQuestion } = req.body;
 
     if (!testType || !answers || Object.keys(answers).length === 0 || timeTaken === undefined) {
       return res.status(400).json({ message: "Data jawaban tidak lengkap." });
     }
     
     const questionIds = Object.keys(answers);
+    
+    // Kueri soal berdasarkan tipe tes
+    const query = { _id: { $in: questionIds }, testType };
+    if (testType === 'post-test-topik' && topikId) {
+      query.topikId = new mongoose.Types.ObjectId(topikId);
+    }
+    if (testType === 'post-test-modul' && modulId) {
+      query.modulId = new mongoose.Types.ObjectId(modulId);
+    }
+
     const questions = await Question.find({
       _id: { $in: questionIds },
       testType,
-      ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }),
-      ...(topikId && { topikId: new mongoose.Types.ObjectId(topikId) }),
-    }).select("+answer");
+    }).select("+answer +durationPerQuestion");
 
     if (questions.length !== questionIds.length) {
       return res.status(404).json({ message: "Beberapa soal tidak ditemukan." });
@@ -96,7 +104,7 @@ export const submitTest = async (req, res) => {
     const accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
 
     // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 15%
-    // Semakin cepat, semakin tinggi skornya. Jika waktu > total durasi, skor = 0.
+    // DIKEMBALIKAN KE RUMUS AWAL: Berdasarkan total waktu pengerjaan.
     const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
     const timeScore = timeEfficiency * 100;
 
@@ -203,10 +211,52 @@ export const submitTest = async (req, res) => {
         // Kita akan menambahkan `weakSubTopics` dari percobaan saat ini ke respons JSON secara terpisah.
         result = existingResult;
       }
+    } else if (testType === "pre-test-global") {
+      const existingResult = await Result.findOne({ userId, testType });
+
+      if (!existingResult || finalScore > existingResult.score) {
+        result = await Result.findOneAndUpdate(
+          { userId, testType },
+          {
+            userId, testType, score: finalScore,
+            correct: correctAnswers,
+            total: totalQuestions,
+            scoreDetails,
+            timeTaken,
+            timestamp: new Date(),
+          },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+        bestScore = finalScore;
+      } else {
+        result = existingResult;
+        bestScore = existingResult.score;
+      }
+    } else if (testType === "post-test-modul" && modulId) {
+      const existingResult = await Result.findOne({ userId, modulId, testType });
+
+      if (!existingResult || finalScore > existingResult.score) {
+        result = await Result.findOneAndUpdate(
+          { userId, modulId, testType },
+          {
+            userId, testType, score: finalScore,
+            correct: correctAnswers,
+            total: totalQuestions,
+            scoreDetails,
+            timeTaken,
+            timestamp: new Date(),
+          },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+        bestScore = finalScore;
+      } else {
+        result = existingResult;
+        bestScore = existingResult.score;
+      }
     } else {
       // Untuk tipe tes lain (misalnya pre-test), selalu buat hasil baru.
       result = await new Result({
-        userId, testType, score: finalScore, // FIX: Simpan finalScore, bukan accuracyScore
+        userId, testType, score: finalScore,
         correct: correctAnswers,
         total: totalQuestions,
         scoreDetails, // Simpan rincian skor
@@ -240,8 +290,9 @@ export const submitTest = async (req, res) => {
       // dan selalu sertakan analisis weakSubTopics dari pengerjaan saat ini untuk feedback langsung.
       data: {
         ...(result.toObject ? result.toObject() : result),
-        weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini
-        score: bestScore, // Pastikan skor yang dikirim adalah skor terbaik
+        weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini.
+        score: finalScore, // Selalu kirim skor pengerjaan SAAT INI untuk ditampilkan di modal.
+        bestScore: bestScore, // Kirim juga skor terbaik untuk perbandingan/update di frontend.
         scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
       }
     });
@@ -457,6 +508,36 @@ export const getLatestResultByType = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Delete a result by test type for the current user
+ * @route   DELETE /api/results/by-type/:testType
+ * @access  Private
+ */
+export const deleteResultByType = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { testType } = req.params;
+
+    if (!testType) {
+      return res.status(400).json({ message: "Parameter testType diperlukan." });
+    }
+
+    const result = await Result.deleteOne({
+      userId,
+      testType,
+    });
+
+    if (result.deletedCount === 0) {
+      // Tidak apa-apa jika tidak ada yang dihapus, mungkin memang belum ada hasilnya.
+      return res.status(200).json({ message: "Tidak ada hasil tes yang cocok untuk dihapus." });
+    }
+
+    res.status(200).json({ message: `Hasil tes untuk tipe ${testType} berhasil dihapus.` });
+  } catch (error) {
+    console.error(`Gagal menghapus hasil tes tipe ${testType}:`, error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
 
 /**
  * @desc    Get all results
@@ -1170,6 +1251,7 @@ export const getTopicsToReinforce = async (req, res) => {
         $group: {
           _id: "$topikId",
           latestScore: { $first: "$score" },
+          weakSubTopics: { $first: "$weakSubTopics" }, // Ambil weakSubTopics dari hasil terbaru
         },
       },
       // 4. Sort by the lowest scores first
@@ -1191,6 +1273,7 @@ export const getTopicsToReinforce = async (req, res) => {
           _id: 0,
           topicTitle: { $arrayElemAt: ["$topicDetails.title", 0] },
           score: { $round: ["$latestScore", 2] },
+          weakSubTopics: { $ifNull: ["$weakSubTopics", []] }, // Sertakan weakSubTopics, default ke array kosong
           status: {
             $switch: {
               branches: [

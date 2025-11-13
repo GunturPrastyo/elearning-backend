@@ -227,7 +227,10 @@ export const getModuleById = async (req, res) => {
 
     // Tentukan query berdasarkan tipe parameter
     const query = isObjectId ? { _id: idOrSlug } : { slug: idOrSlug };
-    const modul = await Modul.findOne(query);
+    const modul = await Modul.findOne(query).populate({
+      path: 'topics',
+      select: 'title _id'
+    });
 
     if (!modul) return res.status(404).json({ message: "Modul dengan slug/ID tersebut tidak ditemukan" });
     res.status(200).json(modul);

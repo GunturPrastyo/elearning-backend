@@ -17,11 +17,13 @@ import {
     saveProgress, 
     getProgress, 
     getLatestResultByTopic,
-    getLatestResultByType,
+    getLatestResultByType, // Tambahkan koma
+    deleteResultByType,
     deleteProgress, // Import controller yang hilang
 } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
+router.route("/by-type/:testType").delete(protect, deleteResultByType);
 // Rute untuk mengambil hasil tes terakhir berdasarkan tipenya
 router.route("/latest-by-type/:testType").get(protect, getLatestResultByType);
 router.route("/latest-by-topic").get(protect, getLatestResultByTopic);

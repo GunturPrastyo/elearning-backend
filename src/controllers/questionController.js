@@ -124,7 +124,7 @@ export const getPostTestModulQuestions = async (req, res) => {
     const questions = await Question.find({
       modulId: req.params.modulId,
       testType: "post-test-modul",
-    });
+    }).select("+answer"); // Sertakan jawaban, topikId, dan subMateriId
     res.json({ questions });
   } catch (err) {
     console.error(err);
@@ -156,6 +156,7 @@ export const updatePostTestModulQuestions = async (req, res) => {
         ...q,
         modulId: req.params.modulId,
         testType: "post-test-modul",
+        topikId: q.topikId || null, // Simpan topikId jika ada
       })),
     );
 
