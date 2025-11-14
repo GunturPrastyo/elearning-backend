@@ -1,25 +1,26 @@
 import express from "express";
 const router = express.Router();
 import { 
-    createResult, 
-    getResults, 
-    getResultsByUser, 
-    submitTest, 
-    logStudyTime, 
-    getStudyTime, 
-    getAnalytics, 
-    getDailyStreak, 
-    getWeeklyActivity, 
-    getModuleScores, 
-    getComparisonAnalytics, 
-    getLearningRecommendations, 
-    getTopicsToReinforce, 
-    saveProgress, 
-    getProgress, 
+    createResult,
+    getResults,
+    getResultsByUser,
+    submitTest,
+    logStudyTime,
+    getStudyTime,
+    getAnalytics,
+    getDailyStreak,
+    getWeeklyActivity,
+    getModuleScores,
+    getComparisonAnalytics,
+    getLearningRecommendations,
+    getTopicsToReinforce,
+    saveProgress,
+    getProgress,
     getLatestResultByTopic,
-    getLatestResultByType, // Tambahkan koma
+    getLatestResultByType,
+    generateCertificate,
     deleteResultByType,
-    deleteProgress, // Import controller yang hilang
+    deleteProgress
 } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
@@ -28,6 +29,7 @@ router.route("/by-type/:testType").delete(protect, deleteResultByType);
 router.route("/latest-by-type/:testType").get(protect, getLatestResultByType);
 router.route("/latest-by-topic").get(protect, getLatestResultByTopic);
 
+router.route("/certificate").get(protect, generateCertificate); // Rute baru untuk sertifikat
 // Gabungkan semua metode untuk path '/progress'
 router.route("/progress")
     .get(protect, getProgress)

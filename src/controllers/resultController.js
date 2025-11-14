@@ -1,3 +1,4 @@
+import asyncHandler from "../middlewares/asyncHandler.js";
 import Result from "../models/Result.js";
 import User from "../models/User.js";
 import Question from "../models/Question.js";
@@ -5,13 +6,14 @@ import mongoose from "mongoose";
 import Materi from "../models/Materi.js";
 import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
+import PDFDocument from 'pdfkit';
 
 /**
  * @desc    Save a test result
  * @route   POST /api/results
  * @access  Private (user)
  */
-export const createResult = async (req, res) => {
+const createResult = async (req, res) => {
   try {
     const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
@@ -61,7 +63,7 @@ export const createResult = async (req, res) => {
  * @route   POST /api/results/submit-test
  * @access  Private
  */
-export const submitTest = async (req, res) => {
+const submitTest = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits, timePerQuestion } = req.body;
@@ -349,7 +351,7 @@ export const submitTest = async (req, res) => {
  * @route   POST /api/results/log-study-time
  * @access  Private
  */
-export const logStudyTime = async (req, res) => {
+const logStudyTime = async (req, res) => {
   try {
     const userId = req.user._id;
     const { topikId, durationInSeconds } = req.body;
@@ -381,7 +383,7 @@ export const logStudyTime = async (req, res) => {
  * @route   POST /api/results/progress
  * @access  Private
  */
-export const saveProgress = async (req, res) => {
+const saveProgress = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, currentIndex } = req.body;
@@ -427,7 +429,7 @@ export const saveProgress = async (req, res) => {
  * @route   GET /api/results/progress
  * @access  Private
  */
-export const getProgress = async (req, res) => {
+const getProgress = async (req, res) => {
   try {
     const userId = req.user._id;
     const { modulId, topikId, testType } = req.query;
@@ -461,7 +463,7 @@ export const getProgress = async (req, res) => {
  * @route   DELETE /api/results/progress
  * @access  Private
  */
-export const deleteProgress = async (req, res) => {
+const deleteProgress = async (req, res) => {
   try {
     const userId = req.user._id;
     // Ambil parameter dari query string, bukan dari body
@@ -484,7 +486,7 @@ export const deleteProgress = async (req, res) => {
  * @route   GET /api/results/latest-by-topic
  * @access  Private
  */
-export const getLatestResultByTopic = async (req, res) => {
+const getLatestResultByTopic = async (req, res) => {
   try {
     const userId = req.user._id;
     const { modulId, topikId } = req.query;
@@ -525,7 +527,7 @@ export const getLatestResultByTopic = async (req, res) => {
  * @route   GET /api/results/latest-by-type/:testType
  * @access  Private
  */
-export const getLatestResultByType = async (req, res) => {
+const getLatestResultByType = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType } = req.params;
@@ -555,7 +557,7 @@ export const getLatestResultByType = async (req, res) => {
  * @route   DELETE /api/results/by-type/:testType
  * @access  Private
  */
-export const deleteResultByType = async (req, res) => {
+const deleteResultByType = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType } = req.params;
@@ -586,7 +588,7 @@ export const deleteResultByType = async (req, res) => {
  * @route   GET /api/results
  * @access  Private (Admin)
  */
-export const getResults = async (req, res) => {
+const getResults = async (req, res) => {
   try {
     const results = await Result.find({}).populate("userId", "name email");
     res.status(200).json(results);
@@ -601,7 +603,7 @@ export const getResults = async (req, res) => {
  * @route   GET /api/results/user/:userId
  * @access  Private
  */
-export const getResultsByUser = async (req, res) => {
+const getResultsByUser = async (req, res) => {
   try {
     const results = await Result.find({ userId: req.params.userId });
     res.status(200).json(results);
@@ -616,7 +618,7 @@ export const getResultsByUser = async (req, res) => {
  * @route   GET /api/results/study-time
  * @access  Private
  */
-export const getStudyTime = async (req, res) => {
+const getStudyTime = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -643,7 +645,7 @@ export const getStudyTime = async (req, res) => {
  * @route   GET /api/results/analytics
  * @access  Private
  */
-export const getAnalytics = async (req, res) => {
+const getAnalytics = async (req, res) => {
   try {
     const userId = req.user?._id;
 
@@ -782,7 +784,7 @@ export const getAnalytics = async (req, res) => {
  * @route   GET /api/results/admin-analytics
  * @access  Private (Admin)
  */
-export const getAdminAnalytics = async (req, res) => {
+const getAdminAnalytics = async (req, res) => {
   try {
     // --- 1. Total Jam Belajar (Semua User) ---
     const totalStudyTimeResult = await Result.aggregate([
@@ -876,7 +878,7 @@ export const getAdminAnalytics = async (req, res) => {
  * @route   GET /api/results/streak
  * @access  Private
  */
-export const getDailyStreak = async (req, res) => {
+const getDailyStreak = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -923,7 +925,7 @@ export const getDailyStreak = async (req, res) => {
  * @route   GET /api/results/weekly-activity
  * @access  Private
  */
-export const getWeeklyActivity = async (req, res) => {
+const getWeeklyActivity = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -972,7 +974,7 @@ export const getWeeklyActivity = async (req, res) => {
  * @route   GET /api/results/module-scores
  * @access  Private
  */
-export const getModuleScores = async (req, res) => {
+const getModuleScores = async (req, res) => {
   try {
     const userId = req.user._id;
     const objectUserId = new mongoose.Types.ObjectId(userId);
@@ -1025,7 +1027,7 @@ export const getModuleScores = async (req, res) => {
  * @route   GET /api/results/comparison-analytics
  * @access  Private
  */
-export const getComparisonAnalytics = async (req, res) => {
+const getComparisonAnalytics = async (req, res) => {
   try {
     const userId = req.user._id;
     const objectUserId = new mongoose.Types.ObjectId(userId);
@@ -1124,7 +1126,7 @@ export const getComparisonAnalytics = async (req, res) => {
  * @route   GET /api/results/recommendations
  * @access  Private
  */
-export const getLearningRecommendations = async (req, res) => {
+const getLearningRecommendations = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -1279,7 +1281,7 @@ export const getLearningRecommendations = async (req, res) => {
  * @route   GET /api/results/topics-to-reinforce
  * @access  Private
  */
-export const getTopicsToReinforce = async (req, res) => {
+const getTopicsToReinforce = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -1342,7 +1344,7 @@ export const getTopicsToReinforce = async (req, res) => {
  * @param   {string} modulId - The ID of the module.
  * @returns {Promise<boolean>} - True if a result exists, false otherwise.
  */
-export const hasCompletedModulePostTest = async (userId, modulId) => {
+const hasCompletedModulePostTest = async (userId, modulId) => {
   if (!userId || !modulId) {
     return false;
   }
@@ -1364,7 +1366,7 @@ export const hasCompletedModulePostTest = async (userId, modulId) => {
  * @route   GET /api/results/subtopic-performance
  * @access  Private
  */
-export const getSubTopicPerformance = async (req, res) => {
+const getSubTopicPerformance = async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -1419,4 +1421,89 @@ export const getSubTopicPerformance = async (req, res) => {
     console.error("Error fetching sub-topic performance:", error);
     res.status(500).json({ message: "Terjadi kesalahan pada server." });
   }
+};
+
+// @desc    Generate a certificate for the logged-in user
+// @route   GET /api/results/certificate
+// @access  Private
+const generateCertificate = asyncHandler(async (req, res) => {
+    const user = req.user; // User tersedia dari middleware protect
+
+    if (!user) {
+        res.status(401);
+        throw new Error('Tidak terotorisasi, pengguna tidak ditemukan.');
+    }
+
+    const doc = new PDFDocument({
+        layout: 'landscape', // Orientasi A4 landscape
+        size: 'A4',
+        margin: 50,
+    });
+
+    // Mengatur header untuk respons file PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Sertifikat_${user.name.replace(/\s+/g, '_')}.pdf"`);
+
+    // Pipe dokumen PDF ke respons HTTP
+    doc.pipe(res);
+
+    // Konten Sertifikat
+    // Border
+    doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40).lineWidth(5).strokeColor('#007bff').stroke();
+
+    doc.fontSize(48)
+        .fillColor('#007bff')
+        .text('SERTIFIKAT KELULUSAN', { align: 'center' })
+        .moveDown(0.5);
+
+    doc.fontSize(24)
+        .fillColor('#333333')
+        .text('Dengan bangga mempersembahkan kepada:', { align: 'center' })
+        .moveDown(1);
+
+    doc.fontSize(36)
+        .fillColor('#000000')
+        .font('Helvetica-Bold') // Gunakan font bold
+        .text(user.name.toUpperCase(), { align: 'center' }) // Nama pengguna
+        .moveDown(1);
+
+    doc.fontSize(18)
+        .fillColor('#333333')
+        .font('Helvetica')
+        .text('Atas keberhasilan menyelesaikan semua modul pembelajaran', { align: 'center' })
+        .moveDown(0.5);
+
+    doc.fontSize(18)
+        .fillColor('#333333')
+        .text('di platform E-learning Personalisasi.', { align: 'center' })
+        .moveDown(2);
+
+    const date = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+    doc.fontSize(14)
+        .fillColor('#555555')
+        .text(`Dikeluarkan pada: ${date}`, { align: 'center' });
+
+    // Footer/Tanda Tangan (opsional)
+    doc.moveDown(2);
+    doc.fontSize(12)
+        .fillColor('#555555')
+        .text('Tanda Tangan', { align: 'right', indent: 100 });
+    doc.text('____________________', { align: 'right', indent: 100 });
+    doc.text('Admin KELAS', { align: 'right', indent: 100 });
+
+    // Selesai membuat dokumen PDF
+    doc.end();
+});
+
+
+export {
+    createResult, getResults, getResultsByUser, submitTest, logStudyTime,
+    getStudyTime, getAnalytics, getDailyStreak, getWeeklyActivity,
+    getModuleScores, getComparisonAnalytics, getLearningRecommendations,
+    getTopicsToReinforce, saveProgress, getProgress, getLatestResultByTopic,
+    getLatestResultByType, deleteResultByType, deleteProgress,
+    getAdminAnalytics, // Pastikan ini juga diekspor jika digunakan
+    hasCompletedModulePostTest,
+    getSubTopicPerformance,
+    generateCertificate
 };
