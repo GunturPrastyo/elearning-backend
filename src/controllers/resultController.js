@@ -6,7 +6,9 @@ import mongoose from "mongoose";
 import Materi from "../models/Materi.js";
 import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
-import PDFDocument from 'pdfkit';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * @desc    Save a test result
@@ -1427,72 +1429,59 @@ const getSubTopicPerformance = async (req, res) => {
 // @route   GET /api/results/certificate
 // @access  Private
 const generateCertificate = asyncHandler(async (req, res) => {
-    const user = req.user; // User tersedia dari middleware protect
+    const { name } = req.query; // Ambil nama dari query parameter
 
-    if (!user) {
-        res.status(401);
-        throw new Error('Tidak terotorisasi, pengguna tidak ditemukan.');
+    if (!name) {
+        res.status(400);
+        throw new Error('Nama pada sertifikat tidak boleh kosong.');
     }
 
-    const doc = new PDFDocument({
-        layout: 'landscape', // Orientasi A4 landscape
-        size: 'A4',
-        margin: 50,
-    });
+    // Batasi nama menjadi maksimal 3 kata
+    const truncatedName = name.split(' ').slice(0, 3).join(' ');
+
+    // 1. Muat template PDF dari file
+    const templatePath = path.resolve(process.cwd(), 'src', 'assets', 'certificate-template.pdf');
+    const templateBytes = await fs.promises.readFile(templatePath);
+    const pdfDoc = await PDFDocument.load(templateBytes);
+
+    // 2. Gunakan font standar yang sudah ada di pdf-lib
+    const customFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold); // Anda bisa ganti ke font lain jika sudah di-embed
+    // 3. Ambil halaman pertama dari template
+    const page = pdfDoc.getPages()[0];
+    const { width, height } = page.getSize();
 
     // Mengatur header untuk respons file PDF
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Sertifikat_${user.name.replace(/\s+/g, '_')}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Sertifikat_${name.replace(/\s+/g, '_')}.pdf"`);
 
-    // Pipe dokumen PDF ke respons HTTP
-    doc.pipe(res);
+    // 4. Gambar teks nama di atas template
+    // Anda perlu menyesuaikan posisi (x, y), ukuran (size), dan warna (color)
+    const nameToDraw = truncatedName.toUpperCase();
+    const nameWidth = customFont.widthOfTextAtSize(nameToDraw, 36);
+    page.drawText(nameToDraw, {
+        x: (width - nameWidth) / 2, // Contoh: Posisi tengah horizontal
+        y: height / 2 + 30,         // Contoh: Posisi tengah vertikal + 30px
+        font: customFont,
+        size: 36,
+        color: rgb(0.1, 0.1, 0.1), // Warna gelap
+    });
 
-    // Konten Sertifikat
-    // Border
-    doc.rect(20, 20, doc.page.width - 40, doc.page.height - 40).lineWidth(5).strokeColor('#007bff').stroke();
-
-    doc.fontSize(48)
-        .fillColor('#007bff')
-        .text('SERTIFIKAT KELULUSAN', { align: 'center' })
-        .moveDown(0.5);
-
-    doc.fontSize(24)
-        .fillColor('#333333')
-        .text('Dengan bangga mempersembahkan kepada:', { align: 'center' })
-        .moveDown(1);
-
-    doc.fontSize(36)
-        .fillColor('#000000')
-        .font('Helvetica-Bold') // Gunakan font bold
-        .text(user.name.toUpperCase(), { align: 'center' }) // Nama pengguna
-        .moveDown(1);
-
-    doc.fontSize(18)
-        .fillColor('#333333')
-        .font('Helvetica')
-        .text('Atas keberhasilan menyelesaikan semua modul pembelajaran', { align: 'center' })
-        .moveDown(0.5);
-
-    doc.fontSize(18)
-        .fillColor('#333333')
-        .text('di platform E-learning Personalisasi.', { align: 'center' })
-        .moveDown(2);
-
+    // 5. Gambar teks tanggal di atas template
     const date = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-    doc.fontSize(14)
-        .fillColor('#555555')
-        .text(`Dikeluarkan pada: ${date}`, { align: 'center' });
+    const dateWidth = customFont.widthOfTextAtSize(date, 14);
+    page.drawText(date, {
+        x: (width - dateWidth) / 2, // Contoh: Posisi tengah horizontal
+        y: height / 2 - 100,        // Contoh: Di bawah nama
+        font: customFont,
+        size: 14,
+        color: rgb(0.3, 0.3, 0.3), // Warna abu-abu
+    });
 
-    // Footer/Tanda Tangan (opsional)
-    doc.moveDown(2);
-    doc.fontSize(12)
-        .fillColor('#555555')
-        .text('Tanda Tangan', { align: 'right', indent: 100 });
-    doc.text('____________________', { align: 'right', indent: 100 });
-    doc.text('Admin KELAS', { align: 'right', indent: 100 });
+    // 6. Simpan PDF ke buffer
+    const pdfBytes = await pdfDoc.save();
 
-    // Selesai membuat dokumen PDF
-    doc.end();
+    // 7. Kirim buffer sebagai respons
+    res.end(Buffer.from(pdfBytes));
 });
 
 
