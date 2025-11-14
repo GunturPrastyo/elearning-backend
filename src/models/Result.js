@@ -12,6 +12,13 @@ const weakSubTopicSchema = new mongoose.Schema({
   score: Number
 }, { _id: false });
 
+const weakTopicSchema = new mongoose.Schema({
+  topikId: { type: mongoose.Schema.Types.ObjectId, ref: "Topik" },
+  title: String,
+  slug: String,
+  score: Number,
+}, { _id: false });
+
 const scoreDetailsSchema = new mongoose.Schema({
   accuracy: { type: Number },
   time: { type: Number },
@@ -72,6 +79,10 @@ const resultSchema = new mongoose.Schema(
     },
     weakSubTopics: {
       type: [weakSubTopicSchema],
+      default: undefined,
+    },
+    weakTopics: {
+      type: [weakTopicSchema],
       default: undefined,
     },
     scoreDetails: {

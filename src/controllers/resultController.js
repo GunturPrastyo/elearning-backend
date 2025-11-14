@@ -175,6 +175,46 @@ export const submitTest = async (req, res) => {
       }
     }
 
+    // --- Analisis Topik Lemah (hanya untuk post-test-modul) ---
+    let weakTopics = [];
+    if (testType === "post-test-modul") {
+      const topicPerformance = {}; // { topikId: { correct: 0, total: 0 } }
+
+      // 1. Kelompokkan jawaban berdasarkan topikId
+      questions.forEach(q => {
+        if (q.topikId) {
+          const topikIdStr = q.topikId.toString();
+          if (!topicPerformance[topikIdStr]) {
+            topicPerformance[topikIdStr] = { correct: 0, total: 0 };
+          }
+          topicPerformance[topikIdStr].total++;
+          if (answers[q._id.toString()] === q.answer) {
+            topicPerformance[topikIdStr].correct++;
+          }
+        }
+      });
+
+      // 2. Hitung skor dan identifikasi topik lemah
+      const weakTopicIds = [];
+      for (const topikId in topicPerformance) {
+        const perf = topicPerformance[topikId];
+        const score = (perf.correct / perf.total) * 100;
+        if (score < 70) { // Batas kelulusan 70%
+          weakTopicIds.push({ id: topikId, score: Math.round(score) });
+        }
+      }
+
+      // 3. Ambil detail topik yang lemah (title, slug)
+      if (weakTopicIds.length > 0) {
+        const topicDetails = await Topik.find({ '_id': { $in: weakTopicIds.map(t => t.id) } }).select('title slug').lean();
+        const topicScoreMap = new Map(weakTopicIds.map(t => [t.id, t.score]));
+        
+        weakTopics = topicDetails.map(topic => ({
+          topikId: topic._id, title: topic.title, slug: topic.slug, score: topicScoreMap.get(topic._id.toString())
+        }));
+      }
+    }
+
     let result;
     let bestScore = finalScore; // Inisialisasi skor akhir dengan skor saat ini
 
@@ -223,6 +263,7 @@ export const submitTest = async (req, res) => {
             total: totalQuestions,
             scoreDetails,
             timeTaken,
+            weakTopics, // Simpan topik lemah
             timestamp: new Date(),
           },
           { new: true, upsert: true, setDefaultsOnInsert: true }
@@ -290,6 +331,7 @@ export const submitTest = async (req, res) => {
       // dan selalu sertakan analisis weakSubTopics dari pengerjaan saat ini untuk feedback langsung.
       data: {
         ...(result.toObject ? result.toObject() : result),
+        weakTopics, // Selalu kirim analisis topik lemah dari pengerjaan saat ini
         weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini.
         score: finalScore, // Selalu kirim skor pengerjaan SAAT INI untuk ditampilkan di modal.
         bestScore: bestScore, // Kirim juga skor terbaik untuk perbandingan/update di frontend.
