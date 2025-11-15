@@ -28,6 +28,17 @@ export const registerUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
+    // Validasi input dasar
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "Nama, email, dan password wajib diisi." });
+    }
+
+    // Validasi format email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Format email tidak valid." });
+    }
+
     const existingUser = await User.findOne({ email });
     if (existingUser)
       return res.status(400).json({ message: "Email sudah digunakan" });
@@ -44,8 +55,13 @@ export const registerUser = async (req, res) => {
     delete userObject.password;
 
     res.status(201).json({
-      message: "Registrasi berhasil",
+      message: "Registrasi berhasil. Silakan login.",
       user: { ...userObject, hasPassword: true }, // User yang register pasti punya password
+      // Mengirimkan kembali kredensial untuk pre-fill form login di frontend
+      loginCredentials: {
+        email: email,
+        password: password, // Mengirim password asli yang diinput user
+      },
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -169,8 +185,8 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// ========================= LOGIN GOOGLE =========================
-export const googleLogin = async (req, res) => {
+// ========================= REGISTER/LOGIN GOOGLE =========================
+export const googleAuth = async (req, res) => {
   try {
     const { token } = req.body;
     const ticket = await client.verifyIdToken({
@@ -183,7 +199,7 @@ export const googleLogin = async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    // Jika user tidak ditemukan, buat user baru dengan role 'user'
+    // Jika user tidak ditemukan, buat user baru
     if (!user) {
       user = await User.create({
         email,
@@ -193,13 +209,10 @@ export const googleLogin = async (req, res) => {
         password: null // Akun Google tidak memiliki password
       });
     } else {
-      // Jika user sudah ada, cukup update nama dan avatar jika berbeda
-      // Role tidak diubah untuk menjaga role yang sudah ada (misal: admin)
-      user.name = name;
-      user.avatar = picture;
-      // Pastikan password tidak di-set jika user sudah ada (mungkin punya password manual)
-      // Cek apakah ada perubahan sebelum menyimpan untuk menghindari operasi DB yang tidak perlu
-      await user.save();
+      // Jika user sudah ada, update nama dan avatar jika belum ada atau berbeda
+      user.name = user.name || name;
+      user.avatar = user.avatar || picture;
+      await user.save({ validateModifiedOnly: true });
     }
 
     const jwtToken = jwt.sign(
@@ -211,16 +224,14 @@ export const googleLogin = async (req, res) => {
     const userObject = user.toObject();
     delete userObject.password;
 
-    console.log(`[Google Login] Mengirim token untuk user: ${user.email}.`);
-
     res.status(200).json({
-      message: "Login Google berhasil",
+      message: "Autentikasi Google berhasil",
       user: { ...userObject, hasPassword: !!user.password },
-      token: jwtToken, // Kirim token di body respons
+      token: jwtToken,
     });
   } catch (error) {
-    console.error("Google Login Error:", error);
-    res.status(500).json({ message: "Login Google gagal. Silakan coba lagi." });
+    console.error("Google Auth Error:", error);
+    res.status(500).json({ message: "Autentikasi Google gagal. Silakan coba lagi." });
   }
 };
 

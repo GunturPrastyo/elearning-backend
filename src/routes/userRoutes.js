@@ -2,8 +2,8 @@ import express from "express";
 import {
   registerUser,
   loginUser,
-  googleLogin,
   logoutUser,
+  googleAuth,
   getUserProfile,
   updateUserProfile,
   changePassword,
@@ -20,7 +20,7 @@ const router = express.Router();
 // Rute Autentikasi
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-router.post("/google-login", googleLogin);
+router.post("/google-auth", googleAuth); // Menggunakan rute dan controller terpadu
 router.post("/logout", logoutUser);
 
 // Rute Profil Pengguna (Dilindungi)
