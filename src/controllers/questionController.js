@@ -77,7 +77,7 @@ export const getPreTestQuestions = async (req, res) => {
   try {
     const questions = await Question.find({
       testType: "pre-test-global",
-    });
+    }).select("+answer"); // <-- Tambahkan ini untuk menyertakan jawaban
     // Mengembalikan array kosong jika tidak ada, dan array berisi soal jika ada.
     res.json({ questions });
   } catch (err) {
