@@ -21,6 +21,11 @@ const userSchema = new mongoose.Schema({
   topicCompletions: [
     { type: mongoose.Schema.Types.ObjectId, ref: "Topik" }
   ],
+  learningLevel: {
+    type: String,
+    enum: ["Dasar", "Menengah", "Lanjutan"],
+    default: "Dasar",
+  },
 
 }, { timestamps: true });
 

@@ -26,6 +26,12 @@ const scoreDetailsSchema = new mongoose.Schema({
   focus: { type: Number },
 }, { _id: false });
 
+const featureScoreSchema = new mongoose.Schema({
+  featureId: { type: mongoose.Schema.Types.ObjectId, ref: "Feature" },
+  featureName: String,
+  score: Number,
+}, { _id: false });
+
 const progressAnswerSchema = new mongoose.Schema({
   questionId: String, selectedOption: String
 }, { _id: false });
@@ -95,6 +101,14 @@ const resultSchema = new mongoose.Schema(
     progressAnswers: { // Field terpisah untuk progress
       type: [progressAnswerSchema],
       default: undefined,
+    },
+    featureScores: { // Untuk menyimpan skor per fitur di pre-test
+      type: [featureScoreSchema],
+      default: undefined,
+    },
+    learningPath: { // Untuk menyimpan hasil level dari pre-test
+      type: String,
+      enum: ["Dasar", "Menengah", "Lanjutan"],
     }
   },
   { timestamps: true }

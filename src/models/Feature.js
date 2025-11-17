@@ -8,6 +8,12 @@ const featureSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    group: {
+      type: String,
+      required: [true, "Grup fitur tidak boleh kosong."],
+      enum: ["Dasar", "Menengah", "Lanjutan"],
+      default: "Dasar",
+    },
   },
   { timestamps: true }
 );

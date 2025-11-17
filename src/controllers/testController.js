@@ -2,7 +2,7 @@ import Question from "../models/Question.js";
 import mongoose from "mongoose";
 
 /**
- * @desc    Get questions for a specific context (pre-test, post-test-modul, post-test-topik)
+ * @desc    Get questions for a specific context (pre-test-global, post-test-modul, post-test-topik)
  * @route   GET /api/questions/:testType/:modulId?/:topikId?
  * @access  Private
  */
@@ -10,7 +10,10 @@ export const getQuestions = async (req, res) => {
   try {
     const { testType, modulId, topikId } = req.params;
 
-    const query = { testType };
+    // Remap 'pre-test-global' from the route to 'pre-test' for DB query
+    const queryTestType = testType === 'pre-test-global' ? 'pre-test' : testType;
+
+    const query = { testType: queryTestType };
     if (modulId) {
       if (!mongoose.Types.ObjectId.isValid(modulId)) {
         return res.status(400).json({ message: "Modul ID tidak valid." });

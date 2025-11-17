@@ -21,11 +21,11 @@ export const getFeatures = async (req, res) => {
  */
 export const createFeature = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, group } = req.body;
     if (!name) {
       return res.status(400).json({ message: "Nama fitur diperlukan." });
     }
-    const newFeature = new Feature({ name });
+    const newFeature = new Feature({ name, group: group || 'Dasar' }); // Default ke 'Dasar'
     await newFeature.save();
     res.status(201).json(newFeature);
   } catch (error) {
@@ -43,10 +43,10 @@ export const createFeature = async (req, res) => {
  */
 export const updateFeature = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, group } = req.body;
     const feature = await Feature.findByIdAndUpdate(
       req.params.id,
-      { name },
+      { name, group },
       { new: true, runValidators: true }
     );
     if (!feature) {

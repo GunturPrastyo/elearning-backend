@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import Materi from "../models/Materi.js";
 import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
+import Feature from "../models/Feature.js";
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import path from 'path';
 import fs from 'fs';
@@ -67,6 +68,9 @@ const createResult = async (req, res) => {
  */
 const submitTest = async (req, res) => {
   try {
+    // DEBUGGING: Log seluruh body request yang masuk ke endpoint ini
+    console.log("[DEBUG] Menerima request ke /api/results/submit-test dengan body:", req.body);
+
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits, timePerQuestion } = req.body;
 
@@ -221,6 +225,12 @@ const submitTest = async (req, res) => {
 
     let result;
     let bestScore = finalScore; // Inisialisasi skor akhir dengan skor saat ini
+    let learningPathResult = null;
+    
+    // Deklarasikan variabel pre-test di sini agar bisa diakses di scope luar
+    let calculatedFeatureScores = [];
+    let avgScoreDasar = 0;
+    let avgScoreMenengah = 0;
 
     // Logika untuk mengambil nilai terbaik pada post-test topik
     if (testType === "post-test-topik" && topikId) {
@@ -258,7 +268,83 @@ const submitTest = async (req, res) => {
     } else if (testType === "pre-test-global") {
       const existingResult = await Result.findOne({ userId, testType });
 
-      if (!existingResult || finalScore > existingResult.score) {
+      // Log untuk memastikan blok pre-test global dieksekusi
+      console.log(`[DEBUG] Memproses pre-test-global untuk user: ${userId}`);
+      
+      // --- START: Logika Baru untuk Pre-test Global ---
+      const allFeatures = await Feature.find().lean();
+      const featureScores = {}; // { featureId: { earned: 0, total: 0, name: '' } }
+
+      // 1. Inisialisasi dan agregasi poin dari semua soal berdasarkan bobot
+      questions.forEach(q => {
+        const isCorrect = answers[q._id.toString()] === q.answer;
+        q.features.forEach(f => {
+          const featureId = f.featureId.toString();
+          if (!featureScores[featureId]) {
+            const featureInfo = allFeatures.find(af => af._id.toString() === featureId);
+            featureScores[featureId] = { earned: 0, max: 0, name: featureInfo?.name || 'Unknown', group: featureInfo?.group || 'Dasar' };
+          }
+          // Akumulasi bobot maksimal (max points) yang mungkin untuk fitur ini dari soal ini.
+          featureScores[featureId].max += (f.weight || 0);
+          // Jika jawaban benar, tambahkan bobot ke skor yang diperoleh.
+          if (isCorrect) {
+            featureScores[featureId].earned += (f.weight || 0);
+          }
+        });
+      });
+
+      // 2. Hitung skor akhir untuk setiap fitur
+      calculatedFeatureScores = Object.entries(featureScores).map(([featureId, data]) => ({
+        featureId,
+        featureName: data.name,
+        group: data.group, // ex: { earned: 8, max: 10 } -> score: 80
+        score: data.max > 0 ? (data.earned / data.max) * 100 : 0,
+      }));
+
+      // Log skor fitur dan grup untuk debugging
+      console.log('Skor Akhir per Fitur (sebelum dikelompokkan):', calculatedFeatureScores);
+
+      // 3. Kelompokkan skor fitur berdasarkan grupnya
+      const groupScores = {
+        Dasar: [],
+        Menengah: [],
+        Lanjutan: [],
+      };
+      calculatedFeatureScores.forEach(fs => {
+        if (groupScores[fs.group]) {
+          groupScores[fs.group].push(fs.score);
+        }
+      });
+
+      // 4. Hitung skor RATA-RATA untuk setiap grup
+      const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
+      avgScoreDasar = calculateAverage(groupScores.Dasar);
+      avgScoreMenengah = calculateAverage(groupScores.Menengah);
+      // const avgScoreLanjutan = calculateAverage(groupScores.Lanjutan); // Untuk pengembangan di masa depan
+
+      console.log(`[DEBUG] Rata-rata Skor Grup Dasar: ${avgScoreDasar}, Rata-rata Skor Grup Menengah: ${avgScoreMenengah}`);
+
+      // 5. Terapkan Aturan Logis dengan urutan yang benar
+      // Aturan dievaluasi dari yang paling ketat (Lanjutan) ke yang paling longgar (Dasar).
+      // Aturan 1: Cek untuk Level Lanjutan
+      if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) {
+        learningPathResult = "Lanjutan";
+      // Aturan 2: Jika tidak lolos Lanjutan, cek untuk Level Menengah
+      } else if (avgScoreDasar >= 75) {
+        learningPathResult = "Menengah";
+      } else {
+        // Aturan 3: Jika semua syarat di atas tidak terpenuhi, pengguna masuk ke level Dasar.
+        learningPathResult = "Dasar";
+      }
+
+      // Update level pengguna di koleksi User
+      await User.findByIdAndUpdate(userId, { learningLevel: learningPathResult });
+      // --- END: Logika Baru untuk Pre-test Global ---
+
+      // Pre-test hanya dikerjakan sekali, jadi kita selalu upsert.
+      // Tidak perlu membandingkan dengan skor lama karena metriknya sekarang berbeda.
+      // if (!existingResult || finalScore > existingResult.score) { // Logika lama dinonaktifkan
         result = await Result.findOneAndUpdate(
           { userId, testType },
           {
@@ -267,16 +353,18 @@ const submitTest = async (req, res) => {
             total: totalQuestions,
             scoreDetails,
             timeTaken,
-            weakTopics, // Simpan topik lemah
+            featureScores: calculatedFeatureScores.map(fs => ({ featureId: fs.featureId, featureName: fs.featureName, score: fs.score })),
+            learningPath: learningPathResult,
             timestamp: new Date(),
           },
           { new: true, upsert: true, setDefaultsOnInsert: true }
         );
         bestScore = finalScore;
-      } else {
-        result = existingResult;
-        bestScore = existingResult.score;
-      }
+      // The 'else' block below was causing a syntax error because its 'if' was commented out.
+      // } else {
+      //   result = existingResult;
+      //   bestScore = existingResult.score;
+      // }
     } else if (testType === "post-test-modul" && modulId) {
       const existingResult = await Result.findOne({ userId, modulId, testType });
 
@@ -317,7 +405,7 @@ const submitTest = async (req, res) => {
     }
     
     // Jika post-test topik lulus, lakukan beberapa update:
-    if (testType === "post-test-topik" && topikId && bestScore >= 70) { // Pastikan batas kelulusan konsisten 70
+    if (testType === "post-test-topik" && topikId && bestScore >= 70) {
       // 1. Tambahkan ID topik ke progres user
       await User.findByIdAndUpdate(req.user._id, {
         $addToSet: { topicCompletions: new mongoose.Types.ObjectId(topikId) },
@@ -325,9 +413,11 @@ const submitTest = async (req, res) => {
     }
 
     // Setelah submit, hapus progress tes yang tersimpan untuk topik ini
-    await Result.deleteOne({
-      userId, topikId, testType: "post-test-topik-progress"
-    });
+    if (testType === "post-test-topik" && topikId) {
+      await Result.deleteOne({
+        userId, topikId, testType: "post-test-topik-progress"
+      });
+    }
 
     res.status(201).json({
       message: "Jawaban berhasil disubmit.",
@@ -339,7 +429,14 @@ const submitTest = async (req, res) => {
         weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini.
         score: finalScore, // Selalu kirim skor pengerjaan SAAT INI untuk ditampilkan di modal.
         bestScore: bestScore, // Kirim juga skor terbaik untuk perbandingan/update di frontend.
+        learningPath: learningPathResult, // Kirim hasil penentuan level
         scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
+        // DEBUG: Kirim rincian skor fitur untuk debugging di frontend
+        ...(testType === "pre-test-global" && {
+          featureScores: calculatedFeatureScores,
+          avgScoreDasar,
+          avgScoreMenengah,
+        }),
       }
     });
   } catch (error) {
