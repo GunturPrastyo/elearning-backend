@@ -106,23 +106,44 @@ const submitTest = async (req, res) => {
     const totalQuestions = questions.length;
     const totalDuration = questions.reduce((acc, q) => acc + (q.durationPerQuestion || 60), 0);
 
-    // --- Kalkulasi Skor Berdasarkan 4 Komponen ---
+    // --- Kalkulasi Skor Berdasarkan 4 Komponen ---    
+    let accuracyScore;
 
     // 1. Skor Ketepatan Jawaban (Sₜ) - Bobot 60%
-    const accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+    if (testType === 'pre-test-global') {
+      // Kalkulasi ketepatan untuk pre-test berdasarkan bobot fitur
+      let totalEarnedWeight = 0;
+      let totalMaxWeight = 0;
+
+      questions.forEach(q => {
+        const isCorrect = answers[q._id.toString()] === q.answer;
+        q.features.forEach(f => {
+          const weight = f.weight || 0;
+          totalMaxWeight += weight;
+          if (isCorrect) {
+            totalEarnedWeight += weight;
+          }
+        });
+      });
+
+      accuracyScore = totalMaxWeight > 0 ? (totalEarnedWeight / totalMaxWeight) * 100 : 0;
+    } else {
+      // Kalkulasi ketepatan standar untuk tes lain
+      accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+    }
 
     // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 15%
     // DIKEMBALIKAN KE RUMUS AWAL: Berdasarkan total waktu pengerjaan.
     const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
     const timeScore = timeEfficiency * 100;
 
-    // 3. Skor Perubahan Jawaban (S𝑐) - Bobot 10%
+    // 3. Skor Stabilitas Jawaban (S𝑐) - Bobot 10%
     // Semakin sedikit perubahan, semakin tinggi skornya. Maksimal perubahan ditoleransi = jumlah soal.
     const changes = answerChanges || 0;
     const changePenalty = totalQuestions > 0 ? Math.min(changes / totalQuestions, 1) : 0;
     const answerStabilityScore = (1 - changePenalty) * 100;
 
-    // 4. Skor Tab Keluar Halaman (S𝑏) - Bobot 15%
+    // 4. Skor Fokus (S𝑏) - Bobot 15%
     // Semakin sedikit keluar tab, semakin tinggi skornya. Toleransi 3x keluar tab.
     const exits = tabExits || 0;
     const focusPenalty = exits > 3 ? 1 : exits / 3;
@@ -344,27 +365,16 @@ const submitTest = async (req, res) => {
 
       // Pre-test hanya dikerjakan sekali, jadi kita selalu upsert.
       // Tidak perlu membandingkan dengan skor lama karena metriknya sekarang berbeda.
-      // if (!existingResult || finalScore > existingResult.score) { // Logika lama dinonaktifkan
-        result = await Result.findOneAndUpdate(
-          { userId, testType },
-          {
-            userId, testType, score: finalScore,
-            correct: correctAnswers,
-            total: totalQuestions,
-            scoreDetails,
-            timeTaken,
-            featureScores: calculatedFeatureScores.map(fs => ({ featureId: fs.featureId, featureName: fs.featureName, score: fs.score })),
-            learningPath: learningPathResult,
-            timestamp: new Date(),
-          },
-          { new: true, upsert: true, setDefaultsOnInsert: true }
-        );
-        bestScore = finalScore;
-      // The 'else' block below was causing a syntax error because its 'if' was commented out.
-      // } else {
-      //   result = existingResult;
-      //   bestScore = existingResult.score;
-      // }
+      result = await Result.findOneAndUpdate(
+        { userId, testType },
+        {
+          userId, testType, score: finalScore, correct: correctAnswers, total: totalQuestions, scoreDetails, timeTaken,
+          featureScores: calculatedFeatureScores.map(fs => ({ featureId: fs.featureId, featureName: fs.featureName, score: fs.score })),
+          learningPath: learningPathResult, timestamp: new Date(),
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+      bestScore = finalScore;
     } else if (testType === "post-test-modul" && modulId) {
       const existingResult = await Result.findOne({ userId, modulId, testType });
 
@@ -1328,22 +1338,22 @@ const getLearningRecommendations = async (req, res) => {
     let continueToModule = null;
     const preTestResult = await Result.findOne({ userId, testType: 'pre-test-global' }).sort({ createdAt: -1 });
 
-    if (preTestResult) {
-        let userLevel;
-        if (preTestResult.score >= 75) userLevel = 'sulit';
-        else if (preTestResult.score >= 40) userLevel = 'sedang';
-        else userLevel = 'mudah';
+    // Gunakan learningPath dari hasil pre-test, bukan skor.
+    if (preTestResult && preTestResult.learningPath) {
+        const learningPath = preTestResult.learningPath.toLowerCase(); // 'Lanjutan' -> 'lanjutan'
+        // Map learningPath ke kategori modul ('mudah', 'sedang', 'sulit')
+        const categoryMap = { 'dasar': 'mudah', 'menengah': 'sedang', 'lanjutan': 'sulit' };
+        const userCategory = categoryMap[learningPath];
 
         // Urutkan semua modul berdasarkan 'order'
         const sortedModules = [...modulesWithCompletion].sort((a, b) => (a.order || 0) - (b.order || 0));
 
-        // Prioritas 1: Cari modul yang direkomendasikan dan sedang berjalan (in-progress)
-        // Sekarang mencari dari modul yang sudah diurutkan
-        let recommendedModule = sortedModules.find(m => m.category === userLevel && m.progress > 0 && m.progress < 100);
+        // Prioritas 1: Cari modul yang direkomendasikan (sesuai kategori) dan sedang berjalan
+        let recommendedModule = sortedModules.find(m => m.category === userCategory && m.progress > 0 && m.progress < 100);
 
         // Prioritas 2: Jika tidak ada, cari modul yang direkomendasikan dan belum dimulai
         if (!recommendedModule) {
-            recommendedModule = sortedModules.find(m => m.category === userLevel && m.progress === 0);
+            recommendedModule = sortedModules.find(m => m.category === userCategory && m.progress === 0);
         }
 
         if (recommendedModule) {
