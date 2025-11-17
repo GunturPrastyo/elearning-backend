@@ -32,69 +32,61 @@ export const getModules = async (req, res) => {
  */
 export const getModulesWithProgress = async (req, res) => {
   try {
-    const userId = req.user?._id;
-    const objectUserId = userId ? new mongoose.Types.ObjectId(userId) : null;
+    const user = await User.findById(req.user._id).select('learningLevel topicCompletions').lean();
+    if (!user) {
+      return res.status(404).json({ message: "User tidak ditemukan" });
+    }
 
-    const modulesWithProgress = await Modul.aggregate([
-      // 0. Urutkan modul berdasarkan field 'order'
-      {
-        $sort: { order: 1 }
-      },
-      // 1. Ambil semua topik yang berelasi
-      {
-        $lookup: {
-          from: "topiks",
-          localField: "_id",
-          foreignField: "modulId",
-          as: "topics"
-        }
-      },
-      // 2. Ambil hasil tes post-test-topik user yang lulus
-      {
-        $lookup: {
-          from: "results",
-          let: { modul_id: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$modulId", "$$modul_id"] },
-                    { $eq: ["$userId", objectUserId] },
-                    { $eq: ["$testType", "post-test-topik"] },
-                    { $gte: ["$score", 80] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: "userCompletions"
-        }
-      },
-      // 3. Bentuk ulang data dan hitung progres
-      {
-        $project: {
-          title: 1,
-          slug: 1,
-          overview: 1,
-          category: 1,
-          icon: 1,
-          order: 1,
-          totalTopics: { $size: "$topics" },
-          completedTopics: { $size: "$userCompletions" },
-          firstTopicTitle: { $ifNull: [{ $arrayElemAt: ["$topics.title", 0] }, null] },
-          progress: {
-            $cond: {
-              if: { $gt: [{ $size: "$topics" }, 0] },
-              then: { $round: [{ $multiply: [{ $divide: [{ $size: "$userCompletions" }, { $size: "$topics" }] }, 100] }] },
-              else: 0
-            }
-          }
-        }
+    const learningPath = user.learningLevel || 'Dasar'; // Default ke 'Dasar'
+    const categoryHierarchy = { 'mudah': 1, 'sedang': 2, 'sulit': 3 };
+    const userLevel = categoryHierarchy[learningPath.toLowerCase()] || 1;
+
+    const modules = await Modul.find({}).sort({ order: 1 }).lean();
+    const allTopics = await Topik.find({}).sort({ order: 1 }).lean();
+
+    const modulesWithDetails = modules.map(modul => {
+      const modulLevel = categoryHierarchy[modul.category] || 1;
+      const isModulLocked = modulLevel > userLevel;
+
+      const topicsForThisModule = allTopics.filter(t => t.modulId.equals(modul._id));
+
+      let previousTopicCompleted = true; // Anggap "topik sebelum yang pertama" sudah selesai
+      const topicsWithStatus = topicsForThisModule.map(topik => {
+        const isCompleted = user.topicCompletions?.some(id => id.equals(topik._id)) || false;
+        const isTopicLocked = isModulLocked || !previousTopicCompleted;
+
+        previousTopicCompleted = isCompleted; // Status ini akan digunakan oleh topik BERIKUTNYA
+        return {
+          _id: topik._id,
+          title: topik.title,
+          slug: topik.slug,
+          isLocked: isTopicLocked,
+          isCompleted: isCompleted,
+        };
+      });
+
+      // Koreksi: Topik pertama tidak boleh terkunci jika modulnya tidak terkunci
+      if (!isModulLocked && topicsWithStatus.length > 0) {
+        topicsWithStatus[0].isLocked = false;
       }
-    ]);
-    res.status(200).json(modulesWithProgress);
+
+      const completedTopicsCount = topicsWithStatus.filter(t => t.isCompleted).length;
+      const totalTopics = topicsWithStatus.length;
+      const progress = totalTopics > 0 ? Math.round((completedTopicsCount / totalTopics) * 100) : 0;
+
+      return {
+        ...modul,
+        isLocked: isModulLocked,
+        progress,
+        completedTopics: completedTopicsCount,
+        totalTopics,
+        topics: topicsWithStatus, // Sertakan topik dengan statusnya
+      };
+    });
+
+    res.status(200).json(modulesWithDetails);
   } catch (err) {
+    console.error("Error in getModulesWithProgress:", err);
     res.status(500).json({ message: err.message });
   }
 }

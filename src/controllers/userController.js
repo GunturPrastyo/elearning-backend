@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 
@@ -26,17 +27,26 @@ export const getUserProfile = async (req, res) => {
 // ========================= REGISTER =========================
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, confirmPassword, role } = req.body;
 
     // Validasi input dasar
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Nama, email, dan password wajib diisi." });
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({ message: "Nama, email, password, dan konfirmasi password wajib diisi." });
     }
 
     // Validasi format email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!validator.isEmail(email)) {
       return res.status(400).json({ message: "Format email tidak valid." });
+    }
+
+    // Validasi panjang password (contoh: min 8 karakter)
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password harus memiliki minimal 8 karakter." });
+    }
+
+    // Validasi konfirmasi password
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Konfirmasi password tidak cocok." });
     }
 
     const existingUser = await User.findOne({ email });
@@ -154,6 +164,11 @@ export const changePassword = async (req, res) => {
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // Validasi format email sebelum query ke database
+    if (!validator.isEmail(email)) {
+      return res.status(400).json({ message: "Format email tidak valid." });
+    }
 
     const user = await User.findOne({ email });
     if (!user)
