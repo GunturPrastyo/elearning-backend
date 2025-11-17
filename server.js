@@ -13,6 +13,7 @@ import questionRoutes from "./src/routes/questionRoutes.js";
 import testRoutes from "./src/routes/testRoutes.js";
 import resultRoutes from "./src/routes/resultRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
+import featureRoutes from "./src/routes/featureRoutes.js";
 import notificationRoutes from './src/routes/notificationRoutes.js';
 
 dotenv.config();
@@ -59,6 +60,7 @@ app.use("/api/questions", questionRoutes);
 app.use("/api/tests", testRoutes);
 app.use("/api/results", resultRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/features", featureRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 // ====================== MONGODB CONNECT ======================

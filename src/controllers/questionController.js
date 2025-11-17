@@ -104,7 +104,11 @@ export const updatePreTestQuestions = async (req, res) => {
 
     // Simpan ulang soal baru
     const inserted = await Question.insertMany(
-      questions.map((q) => ({ ...q, testType: "pre-test-global" }))
+      questions.map((q) => ({
+        ...q,
+        features: q.features || [], // Tambahkan ini
+        testType: "pre-test-global",
+      }))
     );
 
     res.json({ message: "Pre-test berhasil diperbarui", data: inserted });
@@ -156,6 +160,7 @@ export const updatePostTestModulQuestions = async (req, res) => {
         ...q,
         modulId: req.params.modulId,
         testType: "post-test-modul",
+        features: q.features || [], // Tambahkan ini
         topikId: q.topikId || null, // Simpan topikId jika ada
       })),
     );
@@ -221,6 +226,7 @@ export const updateQuestion = async (req, res) => {
       ...q,
       modulId,
       topikId,
+      features: q.features || [], // Tambahkan ini
       testType: "post-test-topik",
       durationPerQuestion: q.durationPerQuestion || 60,
       subMateriId: q.subMateriId || null,
@@ -296,6 +302,7 @@ export const updatePostTestTopikQuestions = async (req, res) => {
         ...q,
         modulId,
         topikId,
+        features: q.features || [], // Tambahkan ini
         testType: "post-test-topik",
       }))
     );
