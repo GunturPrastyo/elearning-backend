@@ -210,19 +210,22 @@ export const getModuleDetailsForUser = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get module by ID or slug
+ * @route   GET /api/modul/:idOrSlug
+ * @access  Private
+ */
 export const getModuleById = async (req, res) => {
   try {
-    const { idOrSlug } = req.params;
+    // Menggunakan `slug` dari rute eksplisit, atau `idOrSlug` dari rute umum
+    const idOrSlug = req.params.slug || req.params.idOrSlug;
 
     // Cek apakah parameter adalah ObjectId yang valid
     const isObjectId = mongoose.Types.ObjectId.isValid(idOrSlug);
 
     // Tentukan query berdasarkan tipe parameter
     const query = isObjectId ? { _id: idOrSlug } : { slug: idOrSlug };
-    const modul = await Modul.findOne(query).populate({
-      path: 'topics',
-      select: 'title _id'
-    });
+    const modul = await Modul.findOne(query);
 
     if (!modul) return res.status(404).json({ message: "Modul dengan slug/ID tersebut tidak ditemukan" });
     res.status(200).json(modul);

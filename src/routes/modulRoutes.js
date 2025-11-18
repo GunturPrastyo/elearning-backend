@@ -22,6 +22,7 @@ router.get("/user-view/:slug", protect, getModuleDetailsForUser);
 router.get("/", protect, admin, getModules);
 router.post("/", protect, admin, upload.single("icon"), createModule);
 router.put("/update-order", protect, admin, updateModulOrder); // Rute spesifik harus di atas
+router.get("/byslug/:slug", protect, admin, getModuleById); // Rute eksplisit untuk slug
 router.get("/:idOrSlug", protect, admin, getModuleById); // Rute dinamis/umum di bawah
 router.put("/:id", protect, admin, upload.single("icon"), updateModul);
 router.delete("/:id", protect, admin, deleteModul);
