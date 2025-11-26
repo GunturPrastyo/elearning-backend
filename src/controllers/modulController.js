@@ -42,13 +42,51 @@ export const getModulesWithProgress = async (req, res) => {
     const userLevel = categoryHierarchy[learningPath.toLowerCase()] || 1;
 
     const modules = await Modul.find({}).sort({ order: 1 }).lean();
-    const allTopics = await Topik.find({}).sort({ order: 1 }).lean();
+    const allTopics = await Topik.find({}).select('_id title slug modulId').sort({ order: 1 }).lean();
+    const allQuestions = await Question.find({ testType: 'post-test-topik' }).select('topikId durationPerQuestion').lean();
+
+    // Agregasi untuk menghitung jumlah pengguna unik per modul
+    const userCountsByModule = await Result.aggregate([
+      { $match: { testType: 'post-test-topik', modulId: { $exists: true } } },
+      // Kelompokkan untuk mendapatkan pengguna unik per modul
+      { $group: { _id: { modulId: "$modulId", userId: "$userId" } } },
+      // Hitung pengguna unik per modul
+      { $group: { _id: "$_id.modulId", userCount: { $sum: 1 } } }
+    ]);
+    const userCountMap = new Map(userCountsByModule.map(item => [item._id.toString(), item.userCount]));
 
     const modulesWithDetails = modules.map(modul => {
       const modulLevel = categoryHierarchy[modul.category] || 1;
-      const isModulLocked = modulLevel > userLevel;
+      let isModulLocked = false;
+
+      // Logika penguncian modul berdasarkan level pengguna
+      if (!user.learningLevel || user.learningLevel === 'Dasar') {
+        // Jika user belum mengambil pre-test, kunci semua modul.
+        isModulLocked = modul.category !== 'mudah';
+      } else {
+        // Jika user sudah punya level, terapkan logika penguncian berdasarkan level.
+        if (user.learningLevel === 'Lanjutan') { // Lanjut
+          isModulLocked = false; // Semua modul terbuka
+        } else if (user.learningLevel === 'Menengah') {
+          // Buka modul 'mudah' dan 'sedang'
+          isModulLocked = !['mudah', 'sedang'].includes(modul.category);
+        } else {
+          // Default untuk 'Dasar' (atau jika ada level lain yang tidak terduga)
+          // Hanya buka modul 'mudah'
+          isModulLocked = modul.category !== 'mudah';
+        }
+      }
 
       const topicsForThisModule = allTopics.filter(t => t.modulId.equals(modul._id));
+      const topicIdsForThisModule = topicsForThisModule.map(t => t._id);
+
+      // Hitung total durasi dari semua soal post-test topik di modul ini
+      const totalDurationInSeconds = allQuestions
+        .filter(q => topicIdsForThisModule.some(tid => tid.equals(q.topikId)))
+        .reduce((sum, q) => sum + (q.durationPerQuestion || 0), 0);
+
+      const totalDuration = Math.ceil(totalDurationInSeconds / 60); // Konversi ke menit dan bulatkan ke atas
+      const userCount = userCountMap.get(modul._id.toString()) || 0;
 
       let previousTopicCompleted = true; // Anggap "topik sebelum yang pertama" sudah selesai
       const topicsWithStatus = topicsForThisModule.map(topik => {
@@ -80,6 +118,8 @@ export const getModulesWithProgress = async (req, res) => {
         progress,
         completedTopics: completedTopicsCount,
         totalTopics,
+        userCount, // Tambahkan userCount
+        totalDuration, // Tambahkan totalDuration
         topics: topicsWithStatus, // Sertakan topik dengan statusnya
       };
     });
