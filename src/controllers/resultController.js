@@ -11,6 +11,41 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import path from 'path';
 import fs from 'fs';
 
+// --- FUNGSI HELPER BARU UNTUK MENGHITUNG LEVEL BELAJAR ---
+const calculateLearningLevel = async (userId) => {
+  const user = await User.findById(userId).populate({
+    path: 'competencyProfile.featureId',
+    model: 'Feature',
+    select: 'group'
+  }).lean();
+
+  if (!user || !user.competencyProfile) {
+    return null;
+  }
+
+  const groupScores = {
+    Dasar: [],
+    Menengah: [],
+    Lanjutan: [],
+  };
+
+  user.competencyProfile.forEach(comp => {
+    if (comp.featureId && groupScores[comp.featureId.group]) {
+      groupScores[comp.featureId.group].push(comp.score);
+    }
+  });
+
+  const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
+  const avgScoreDasar = calculateAverage(groupScores.Dasar);
+  const avgScoreMenengah = calculateAverage(groupScores.Menengah);
+
+  if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) return "Lanjutan";
+  if (avgScoreDasar >= 75) return "Menengah";
+  return "Dasar";
+};
+
+
 /**
  * @desc    Save a test result
  * @route   POST /api/results
@@ -89,15 +124,12 @@ const submitTest = async (req, res) => {
       query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
-    const questions = await Question.find({
-      _id: { $in: questionIds },
-      testType,
-    }).select("+answer +durationPerQuestion");
+    // Perbaikan: Kueri soal tidak perlu menyertakan testType karena ID sudah unik
+    const questions = await Question.find({ _id: { $in: questionIds } }).select("+answer +durationPerQuestion +features");
 
     if (questions.length !== questionIds.length) {
       return res.status(404).json({ message: "Beberapa soal tidak ditemukan." });
     }
-
     let correctAnswers = 0;
     questions.forEach((q) => {
       if (answers[q._id.toString()] === q.answer) correctAnswers++;
@@ -396,6 +428,62 @@ const submitTest = async (req, res) => {
         result = existingResult;
         bestScore = existingResult.score;
       }
+
+      // --- START: Logika Baru untuk Update Kompetensi setelah Post-Test Modul ---
+      if (testType === "post-test-modul") {
+        console.log(`[DEBUG] Memulai update kompetensi untuk user: ${userId} dari modul: ${modulId}`);
+
+        // 1. Hitung skor per fitur dari tes saat ini
+        const featureScoresFromTest = {}; // { featureId: { earned: 0, max: 0 } }
+        questions.forEach(q => {
+          const isCorrect = answers[q._id.toString()] === q.answer;
+          q.features.forEach(f => {
+            const featureId = f.featureId.toString();
+            if (!featureScoresFromTest[featureId]) {
+              featureScoresFromTest[featureId] = { earned: 0, max: 0 };
+            }
+            featureScoresFromTest[featureId].max += (f.weight || 0);
+            if (isCorrect) {
+              featureScoresFromTest[featureId].earned += (f.weight || 0);
+            }
+          });
+        });
+
+        // 2. Ambil profil kompetensi user yang ada
+        const user = await User.findById(userId).select('competencyProfile');
+        const currentProfileMap = new Map(user.competencyProfile.map(item => [item.featureId.toString(), item.score]));
+
+        // 3. Gabungkan skor baru dengan profil yang ada
+        for (const featureId in featureScoresFromTest) {
+          const { earned, max } = featureScoresFromTest[featureId];
+          const newScore = max > 0 ? (earned / max) * 100 : 0;
+          // Update skor di map. Ini akan menimpa skor lama dari pre-test atau post-test sebelumnya.
+          currentProfileMap.set(featureId, newScore);
+        }
+
+        // 4. Ubah map kembali menjadi format array untuk disimpan
+        const updatedCompetencyProfile = Array.from(currentProfileMap, ([featureId, score]) => ({
+          featureId: new mongoose.Types.ObjectId(featureId),
+          score: parseFloat(score.toFixed(2))
+        }));
+
+        // 5. Simpan profil kompetensi yang baru
+        user.competencyProfile = updatedCompetencyProfile;
+        await user.save();
+
+        console.log(`[DEBUG] Profil kompetensi user ${userId} berhasil diperbarui.`);
+
+        // 6. Hitung ulang learningLevel berdasarkan profil baru
+        const newLearningLevel = await calculateLearningLevel(userId);
+        await User.findByIdAndUpdate(userId, { learningLevel: newLearningLevel });
+        
+        console.log(`[DEBUG] Level belajar user ${userId} diperbarui menjadi: ${newLearningLevel}`);
+
+        // Tambahkan level baru ke data respons
+        learningPathResult = newLearningLevel;
+      }
+      // --- END: Logika Baru ---
+
     } else {
       // Untuk tipe tes lain (misalnya pre-test), selalu buat hasil baru.
       result = await new Result({
@@ -1591,13 +1679,60 @@ const generateCertificate = asyncHandler(async (req, res) => {
     res.end(Buffer.from(pdfBytes));
 });
 
+// @desc    Get user's competency map from pre-test results
+// @route   GET /api/results/competency-map
+// @access  Private
+const getCompetencyMap = asyncHandler(async (req, res) => {
+    // 1. Ambil semua fitur/indikator yang tersedia, urutkan berdasarkan grup lalu nama
+    const allFeatures = await Feature.find({}).sort({ group: 1, name: 1 }).lean();
+    if (!allFeatures.length) {
+        return res.json({ labels: [], userScores: [], classAverages: [] });
+    }
+
+    // 2. Ambil SATU hasil pre-test global TERBARU dari pengguna yang login
+    const userResult = await Result.findOne({
+        userId: req.user._id,
+        testType: 'pre-test-global'
+    }).sort({ timestamp: -1 }).lean(); // Ambil yang terbaru
+
+    // Jika tidak ada hasil pre-test, kembalikan data kosong
+    if (!userResult || !userResult.featureScores || userResult.featureScores.length === 0) {
+        const emptyScores = allFeatures.map(() => 0);
+        const classAverages = allFeatures.map(() => Math.floor(Math.random() * (85 - 60 + 1)) + 60);
+        return res.json({
+            labels: allFeatures.map(f => f.name),
+            userScores: emptyScores,
+            classAverages: classAverages,
+        });
+    }
+
+    // 3. Buat peta skor dari hasil tes yang sudah ada untuk pencarian cepat
+    const scoreMap = new Map(userResult.featureScores.map(fs => [fs.featureId.toString(), fs.score]));
+
+    // 4. Susun skor pengguna sesuai urutan `allFeatures`
+    const userScores = allFeatures.map(f => {
+        return scoreMap.get(f._id.toString()) || 0; // Jika fitur tidak ada di hasil tes, skornya 0
+    });
+
+    // 5. (Opsional) Hitung rata-rata kelas untuk perbandingan
+    // Untuk saat ini, kita akan mengembalikan data dummy untuk rata-rata kelas.
+    // Anda bisa mengembangkan ini lebih lanjut untuk menghitung dari semua pengguna.
+    const classAverages = allFeatures.map(() => Math.floor(Math.random() * (85 - 60 + 1)) + 60);
+
+    res.json({
+        labels: allFeatures.map(f => f.name),
+        userScores: userScores,
+        classAverages: classAverages, // Placeholder
+    });
+});
+
 
 export {
     createResult, getResults, getResultsByUser, submitTest, logStudyTime,
     getStudyTime, getAnalytics, getDailyStreak, getWeeklyActivity,
     getModuleScores, getComparisonAnalytics, getLearningRecommendations,
     getTopicsToReinforce, saveProgress, getProgress, getLatestResultByTopic,
-    getLatestResultByType, deleteResultByType, deleteProgress,
+    getLatestResultByType, deleteResultByType, deleteProgress, getCompetencyMap,
     getAdminAnalytics, // Pastikan ini juga diekspor jika digunakan
     hasCompletedModulePostTest,
     getSubTopicPerformance,

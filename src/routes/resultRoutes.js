@@ -20,7 +20,8 @@ import {
     getLatestResultByType,
     generateCertificate,
     deleteResultByType,
-    deleteProgress
+    deleteProgress,
+    getCompetencyMap
 } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
@@ -51,7 +52,7 @@ router.route("/comparison-analytics").get(protect, getComparisonAnalytics);
 router.route("/recommendations").get(protect, getLearningRecommendations);
 router.route("/topics-to-reinforce").get(protect, getTopicsToReinforce);
 router.route("/streak").get(protect, getDailyStreak); // <-- Tambahkan rute yang hilang
+router.route("/competency-map").get(protect, getCompetencyMap); // <-- Rute baru untuk Peta Kompetensi
 
-// Tambahkan rute-rute Anda yang lain di sini...
 
 export default router;
