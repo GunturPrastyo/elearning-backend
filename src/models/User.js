@@ -26,6 +26,19 @@ const userSchema = new mongoose.Schema({
     enum: ["Dasar", "Menengah", "Lanjutan"],
     default: "Dasar",
   },
+  competencyProfile: [{
+    featureId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Feature',
+      required: true,
+    },
+    score: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    _id: false // Tidak perlu _id untuk setiap item array
+  }],
 
 }, { timestamps: true });
 

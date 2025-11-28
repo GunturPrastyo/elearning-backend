@@ -414,3 +414,71 @@ export const updateModulOrder = async (req, res) => {
     res.status(500).json({ message: "Terjadi kesalahan server." });
   }
 };
+
+/**
+ * @desc    Get features for a specific module
+ * @route   GET /api/modul/:id/features
+ * @access  Private/Admin
+ */
+export const getModuleFeatures = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID Modul tidak valid" });
+    }
+
+    const modul = await Modul.findById(id).populate('features');
+    if (!modul) {
+      return res.status(404).json({ message: "Modul tidak ditemukan" });
+    }
+
+    res.status(200).json(modul.features);
+  } catch (error) {
+    console.error("Error getting module features:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+/**
+ * @desc    Update features for a specific module and sync with its questions
+ * @route   PUT /api/modul/:id/features
+ * @access  Private/Admin
+ */
+export const updateModuleFeatures = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { featureIds } = req.body; // Mengharapkan array berisi ID fitur
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID Modul tidak valid" });
+    }
+
+    // Pastikan tidak ada ID fitur yang duplikat sebelum menyimpan
+    const uniqueFeatureIds = [...new Set(featureIds.filter(id => id))]; // Filter null/undefined dan buat unik
+
+    // 1. Update fitur pada modul
+    const updatedModul = await Modul.findByIdAndUpdate(
+      id,
+      { $set: { features: uniqueFeatureIds } },
+      { new: true }
+    );
+
+    if (!updatedModul) {
+      return res.status(404).json({ message: "Modul tidak ditemukan" });
+    }
+
+    // 2. Siapkan format fitur untuk soal (dengan bobot default 1)
+    const questionFeatures = uniqueFeatureIds.map(featureId => ({ featureId, weight: 1 }));
+
+    // 3. Update semua soal 'post-test-modul' yang terkait dengan modul ini
+    await Question.updateMany(
+      { modulId: id, testType: 'post-test-modul' },
+      { $set: { features: questionFeatures } }
+    );
+
+    res.status(200).json({ message: "Fitur modul dan soal terkait berhasil diperbarui.", data: updatedModul });
+  } catch (error) {
+    console.error("Error updating module features:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server." });
+  }
+};

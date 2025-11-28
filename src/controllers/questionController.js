@@ -1,5 +1,6 @@
 import Question from "../models/Question.js";
 import mongoose from "mongoose";
+import Modul from "../models/Modul.js"; // Impor model Modul
 
 // ✅ Create Multiple Questions
 export const createQuestion = async (req, res) => {
@@ -10,6 +11,16 @@ export const createQuestion = async (req, res) => {
       return res.status(400).json({ message: "Pertanyaan tidak boleh kosong." });
     }
 
+    let moduleFeatures = [];
+    // Jika ini adalah post-test-modul, ambil fitur dari modul induk
+    if (testType === 'post-test-modul' && modulId) {
+      const modul = await Modul.findById(modulId).select('features').lean();
+      if (modul && modul.features) {
+        // Siapkan format fitur untuk soal dengan bobot default 1
+        moduleFeatures = modul.features.map(featureId => ({ featureId, weight: 1 }));
+      }
+    }
+
     // Simpan semua pertanyaan
     const createdQuestions = await Promise.all(
       questions.map((q) => {
@@ -17,6 +28,10 @@ export const createQuestion = async (req, res) => {
           questionText: q.questionText,
           options: q.options,
           answer: q.answer,
+          // Tambahkan fitur ke setiap soal yang dibuat
+          // Jika bukan post-test-modul, `moduleFeatures` akan menjadi array kosong
+          // dan akan menggunakan `q.features` dari request jika ada (misal: pre-test-global)
+          features: testType === 'post-test-modul' ? moduleFeatures : (q.features || []),
           modulId: modulId || null,
           topikId: topikId || null,
           testType,
@@ -151,6 +166,13 @@ export const updatePostTestModulQuestions = async (req, res) => {
       return res.status(400).json({ message: "Modul ID tidak valid atau tidak ada." });
     }
 
+    // Ambil fitur dari modul induk untuk disinkronkan ke soal
+    const modul = await Modul.findById(modulId).select('features').lean();
+    let moduleFeatures = [];
+    if (modul && modul.features) {
+      moduleFeatures = modul.features.map(featureId => ({ featureId, weight: 1 }));
+    }
+
     // Hapus semua soal lama dulu
     await Question.deleteMany({ modulId: modulId, testType: "post-test-modul" });
 
@@ -158,9 +180,9 @@ export const updatePostTestModulQuestions = async (req, res) => {
     const inserted = await Question.insertMany(
       questions.map((q) => ({
         ...q,
+        features: moduleFeatures, // Terapkan fitur yang sudah disinkronkan dari modul
         modulId: req.params.modulId,
         testType: "post-test-modul",
-        features: q.features || [], // Tambahkan ini
         topikId: q.topikId || null, // Simpan topikId jika ada
       })),
     );

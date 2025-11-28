@@ -7,7 +7,9 @@ import {
   deleteModul,
   getModulesWithProgress,
   getModuleDetailsForUser,
-  updateModulOrder, // <-- Impor fungsi baru
+  updateModulOrder,
+  getModuleFeatures,
+  updateModuleFeatures,
 } from "../controllers/modulController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js"; // Asumsi middleware ada di sini
 import { upload } from "../middlewares/upload.js";
@@ -25,6 +27,12 @@ router.put("/update-order", protect, admin, updateModulOrder); // Rute spesifik 
 router.get("/byslug/:slug", protect, admin, getModuleById); // Rute eksplisit untuk slug
 router.get("/:idOrSlug", protect, admin, getModuleById); // Rute dinamis/umum di bawah
 router.put("/:id", protect, admin, upload.single("icon"), updateModul);
+
+// Rute untuk mengelola fitur pada modul
+router.route("/:id/features")
+  .get(protect, admin, getModuleFeatures)
+  .put(protect, admin, updateModuleFeatures);
+
 router.delete("/:id", protect, admin, deleteModul);
 
 export default router;
