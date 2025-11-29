@@ -10,6 +10,7 @@ import {
     getAnalytics,
     getDailyStreak,
     getWeeklyActivity,
+    getClassWeeklyActivity,
     getModuleScores,
     getComparisonAnalytics,
     getLearningRecommendations,
@@ -47,6 +48,7 @@ router.route("/").get(protect, admin, getResults).post(protect, createResult);
 
 router.route("/analytics").get(protect, getAnalytics);
 router.route("/weekly-activity").get(protect, getWeeklyActivity);
+router.route("/class-weekly-activity").get(protect, getClassWeeklyActivity);
 router.route("/module-scores").get(protect, getModuleScores);
 router.route("/comparison-analytics").get(protect, getComparisonAnalytics);
 router.route("/recommendations").get(protect, getLearningRecommendations);

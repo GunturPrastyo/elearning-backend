@@ -1170,6 +1170,63 @@ const getWeeklyActivity = async (req, res) => {
 };
 
 /**
+ * @desc    Get class average weekly study activity
+ * @route   GET /api/results/class-weekly-activity
+ * @access  Private
+ */
+const getClassWeeklyActivity = async (req, res) => {
+  try {
+    // Dapatkan tanggal 7 hari yang lalu
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    // Agregasi untuk menghitung rata-rata waktu belajar harian
+    const activity = await Result.aggregate([
+      // 1. Filter entri relevan dalam 7 hari terakhir
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo },
+          timeTaken: { $exists: true, $gt: 0 } // Hanya entri yang mencatat waktu
+        },
+      },
+      // 2. Kelompokkan total waktu per pengguna per hari
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            userId: "$userId"
+          },
+          totalSecondsPerUser: { $sum: "$timeTaken" }
+        }
+      },
+      // 3. Hitung rata-rata dari total waktu harian semua pengguna
+      {
+        $group: {
+          _id: "$_id.date", // Sekarang kelompokkan hanya berdasarkan tanggal
+          averageSeconds: { $avg: "$totalSecondsPerUser" }
+        }
+      },
+      { $sort: { _id: 1 } }, // Urutkan berdasarkan tanggal
+    ]);
+
+    const activityMap = new Map(activity.map(item => [item._id, item.averageSeconds]));
+
+    const weeklyAverages = Array(7).fill(0).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const dateString = d.toISOString().split('T')[0];
+      return activityMap.get(dateString) || 0;
+    });
+
+    res.status(200).json({ weeklyAverages });
+  } catch (error) {
+    console.error("Error fetching class weekly activity:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
+
+/**
  * @desc    Get user's latest module post-test scores
  * @route   GET /api/results/module-scores
  * @access  Private
@@ -1686,51 +1743,49 @@ const generateCertificate = asyncHandler(async (req, res) => {
 // @route   GET /api/results/competency-map
 // @access  Private
 const getCompetencyMap = asyncHandler(async (req, res) => {
-    // 1. Ambil semua fitur/indikator yang tersedia, urutkan berdasarkan grup lalu nama
-    const allFeatures = await Feature.find({}).sort({ group: 1, name: 1 }).lean(); // Mengambil semua fitur yang ada
-    if (!allFeatures.length) {
-        return res.json({ labels: [], userScores: [], classAverages: [] });
-    }
+  // 1. Ambil profil kompetensi pengguna (peta skor)
+  const user = await User.findById(req.user._id).select('competencyProfile').lean();
+  const scoreMap = new Map(
+    (user?.competencyProfile || []).map(comp => [comp.featureId.toString(), comp.score])
+  );
 
-    // 2. Ambil data pengguna yang sedang login beserta profil kompetensinya
-    const user = await User.findById(req.user._id).select('competencyProfile').lean();
+  // 2. Ambil semua modul dan populate fitur-fitur terkait
+  const modulesWithFeatures = await Modul.find({})
+    .populate({
+      path: 'features',
+      model: 'Feature',
+      select: 'name group' // Hanya ambil field yang dibutuhkan dari Fitur
+    })
+    .select('title slug features icon order') // Ambil field yang dibutuhkan dari Modul
+    .sort({ order: 1 }) // Urutkan modul berdasarkan urutannya
+    .lean();
 
-    // Jika pengguna tidak memiliki profil kompetensi, kembalikan data kosong
-    if (!user || !user.competencyProfile || user.competencyProfile.length === 0) {
-        const emptyScores = allFeatures.map(() => 0);
-        // Data dummy untuk rata-rata kelas sebagai placeholder
-        const classAverages = allFeatures.map(() => Math.floor(Math.random() * (85 - 60 + 1)) + 60);
-        return res.json({
-            labels: allFeatures.map(f => f.name),
-            userScores: emptyScores,
-            classAverages: classAverages,
-        });
-    }
+  // 3. Gabungkan data modul, fitur, dan skor pengguna
+  const competencyMapByModule = modulesWithFeatures
+    .filter(modul => modul.features && modul.features.length > 0) // Hanya sertakan modul yang punya fitur
+    .map(modul => {
+      const featuresWithScores = modul.features.map(feature => ({
+        name: feature.name,
+        group: feature.group,
+        score: scoreMap.get(feature._id.toString()) || 0 // Ambil skor dari profil, default 0
+      }));
 
-    // 3. Buat peta skor dari profil kompetensi pengguna untuk pencarian cepat
-    const scoreMap = new Map(user.competencyProfile.map(comp => [comp.featureId.toString(), comp.score]));
-
-    // 4. Susun skor pengguna sesuai urutan `allFeatures` untuk memastikan konsistensi urutan pada grafik
-    const userScores = allFeatures.map(f => {
-        return scoreMap.get(f._id.toString()) || 0; // Jika fitur tidak ada di hasil tes, skornya 0
+      return {
+        moduleTitle: modul.title,
+        moduleSlug: modul.slug,
+        moduleIcon: modul.icon,
+        features: featuresWithScores,
+      };
     });
 
-    // 5. (Opsional) Hitung rata-rata kelas untuk perbandingan
-    // Untuk saat ini, kita akan mengembalikan data dummy untuk rata-rata kelas.
-    // Anda bisa mengembangkan ini lebih lanjut untuk menghitung dari semua pengguna.
-    const classAverages = allFeatures.map(() => Math.floor(Math.random() * (85 - 60 + 1)) + 60);
-
-    res.json({
-        labels: allFeatures.map(f => f.name), // Label untuk grafik
-        userScores: userScores,
-        classAverages: classAverages, // Placeholder
-    });
+  res.json(competencyMapByModule);
 });
 
 
 export {
     createResult, getResults, getResultsByUser, submitTest, logStudyTime,
     getStudyTime, getAnalytics, getDailyStreak, getWeeklyActivity,
+    getClassWeeklyActivity,
     getModuleScores, getComparisonAnalytics, getLearningRecommendations,
     getTopicsToReinforce, saveProgress, getProgress, getLatestResultByTopic,
     getLatestResultByType, deleteResultByType, deleteProgress, getCompetencyMap,
