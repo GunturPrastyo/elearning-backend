@@ -416,69 +416,61 @@ export const updateModulOrder = async (req, res) => {
 };
 
 /**
- * @desc    Get features for a specific module
- * @route   GET /api/modul/:id/features
+ * @desc    Get feature weights for a specific module
+ * @route   GET /api/modul/:id/feature-weights
  * @access  Private/Admin
  */
-export const getModuleFeatures = async (req, res) => {
+export const getModuleFeatureWeights = async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID Modul tidak valid" });
     }
 
-    const modul = await Modul.findById(id).populate('features');
+    const modul = await Modul.findById(id).select("featureWeights");
     if (!modul) {
       return res.status(404).json({ message: "Modul tidak ditemukan" });
     }
 
-    res.status(200).json(modul.features);
+    res.status(200).json(modul.featureWeights || []);
   } catch (error) {
-    console.error("Error getting module features:", error);
+    console.error("Error getting module feature weights:", error);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 };
 
 /**
- * @desc    Update features for a specific module and sync with its questions
- * @route   PUT /api/modul/:id/features
+ * @desc    Update feature weights for a specific module
+ * @route   PUT /api/modul/:id/feature-weights
  * @access  Private/Admin
  */
-export const updateModuleFeatures = async (req, res) => {
+export const updateModuleFeatureWeights = async (req, res) => {
   try {
     const { id } = req.params;
-    const { featureIds } = req.body; // Mengharapkan array berisi ID fitur
+    const { weights } = req.body; // Menerima { weights: [{ featureId, weight }] }
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "ID Modul tidak valid" });
+    if (!Array.isArray(weights)) {
+      return res.status(400).json({ message: "Data bobot tidak valid, harus berupa array." });
     }
 
-    // Pastikan tidak ada ID fitur yang duplikat sebelum menyimpan
-    const uniqueFeatureIds = [...new Set(featureIds.filter(id => id))]; // Filter null/undefined dan buat unik
+    const modul = await Modul.findById(id);
 
-    // 1. Update fitur pada modul
-    const updatedModul = await Modul.findByIdAndUpdate(
-      id,
-      { $set: { features: uniqueFeatureIds } },
-      { new: true }
-    );
+    if (modul) {
+      // Validasi sederhana untuk memastikan data yang masuk benar
+      const validatedWeights = weights.map(fw => ({
+        featureId: fw.featureId,
+        weight: Number(fw.weight) || 0
+      }));
 
-    if (!updatedModul) {
-      return res.status(404).json({ message: "Modul tidak ditemukan" });
+      modul.featureWeights = validatedWeights;
+
+      const updatedModul = await modul.save();
+      res.status(200).json(updatedModul.featureWeights);
+    } else {
+      res.status(404).json({ message: "Modul tidak ditemukan" });
     }
-
-    // 2. Siapkan format fitur untuk soal (dengan bobot default 1)
-    const questionFeatures = uniqueFeatureIds.map(featureId => ({ featureId, weight: 1 }));
-
-    // 3. Update semua soal 'post-test-modul' yang terkait dengan modul ini
-    await Question.updateMany(
-      { modulId: id, testType: 'post-test-modul' },
-      { $set: { features: questionFeatures } }
-    );
-
-    res.status(200).json({ message: "Fitur modul dan soal terkait berhasil diperbarui.", data: updatedModul });
   } catch (error) {
-    console.error("Error updating module features:", error);
+    console.error("Error updating module feature weights:", error);
     res.status(500).json({ message: "Terjadi kesalahan server." });
   }
 };

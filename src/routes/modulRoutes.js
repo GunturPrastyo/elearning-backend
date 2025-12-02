@@ -8,8 +8,8 @@ import {
   getModulesWithProgress,
   getModuleDetailsForUser,
   updateModulOrder,
-  getModuleFeatures,
-  updateModuleFeatures,
+  getModuleFeatureWeights,
+  updateModuleFeatureWeights,
 } from "../controllers/modulController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js"; // Asumsi middleware ada di sini
 import { upload } from "../middlewares/upload.js";
@@ -29,9 +29,9 @@ router.get("/:idOrSlug", protect, admin, getModuleById); // Rute dinamis/umum di
 router.put("/:id", protect, admin, upload.single("icon"), updateModul);
 
 // Rute untuk mengelola fitur pada modul
-router.route("/:id/features")
-  .get(protect, admin, getModuleFeatures)
-  .put(protect, admin, updateModuleFeatures);
+router.route("/:id/feature-weights")
+  .get(protect, admin, getModuleFeatureWeights)
+  .put(protect, admin, updateModuleFeatureWeights);
 
 router.delete("/:id", protect, admin, deleteModul);
 
