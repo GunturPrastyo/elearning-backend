@@ -3,10 +3,78 @@ import jwt from "jsonwebtoken";
 import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
+import Feature from "../models/Feature.js"; // Diperlukan untuk kalkulasi
 
 import fs from "fs";
 import path from "path";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// --- FUNGSI HELPER BARU UNTUK MENGHITUNG & UPDATE LEVEL BELAJAR ---
+export const recalculateUserLearningLevel = async (userId) => {
+  const user = await User.findById(userId).populate({
+    path: 'competencyProfile.featureId',
+    model: 'Feature',
+    select: 'group'
+  }).lean();
+
+  if (!user || !user.competencyProfile || user.competencyProfile.length === 0) {
+    return "Dasar"; // Default level jika tidak ada profil kompetensi
+  }
+
+  // 1. Agregasi skor: Ambil skor tertinggi untuk setiap fitur unik.
+  const aggregatedScores = {}; // { featureId: { score: number, group: string } }
+  user.competencyProfile.forEach(comp => {
+    if (comp.featureId) {
+      const featureIdStr = comp.featureId._id.toString();
+      if (!aggregatedScores[featureIdStr] || comp.score > aggregatedScores[featureIdStr].score) {
+        aggregatedScores[featureIdStr] = {
+          score: comp.score,
+          group: comp.featureId.group
+        };
+      }
+    }
+  });
+
+  // 2. Kelompokkan skor agregat berdasarkan grupnya
+  const groupScores = { Dasar: [], Menengah: [], Lanjutan: [] };
+  Object.values(aggregatedScores).forEach(aggScore => {
+    if (groupScores[aggScore.group]) groupScores[aggScore.group].push(aggScore.score);
+  });
+
+  const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  const avgScoreDasar = calculateAverage(groupScores.Dasar);
+  const avgScoreMenengah = calculateAverage(groupScores.Menengah);
+
+  // 3. Terapkan aturan penentuan level
+  if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) return "Lanjutan";
+  if (avgScoreDasar >= 75) return "Menengah";
+  return "Dasar";
+};
+
+// --- FUNGSI HELPER BARU UNTUK MENENTUKAN STATUS PENGUNCIAN MODUL ---
+export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
+  const level = userLearningLevel || 'Dasar';
+
+  // Aturan 1: Jika level pengguna 'Lanjutan', semua modul terbuka.
+  if (level === 'Lanjutan') {
+    return false;
+  }
+
+  // Aturan 2: Jika level pengguna 'Menengah', modul 'mudah' dan 'sedang' terbuka.
+  if (level === 'Menengah') {
+    // Modul terkunci jika kategorinya BUKAN 'mudah' ATAU 'sedang'.
+    return !['mudah', 'sedang'].includes(moduleCategory);
+  }
+
+  // Aturan 3 (Default): Jika level pengguna 'Dasar' (atau belum ditentukan),
+  // hanya modul 'mudah' yang terbuka.
+  if (level === 'Dasar') {
+    // Modul terkunci jika kategorinya BUKAN 'mudah'.
+    return moduleCategory !== 'mudah';
+  }
+
+  return true; // Defaultnya, kunci modul jika ada level yang tidak dikenal.
+};
 
 // ========================= GET USER PROFILE =========================
 export const getUserProfile = async (req, res) => {
@@ -277,6 +345,45 @@ export const completeTopic = async (req, res) => {
     res.status(200).json({ message: "Topik berhasil ditandai selesai" });
   } catch (error) {
     console.error("Error completing topic:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+// ========================= GET COMPETENCY PROFILE =========================
+export const getCompetencyProfile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // 1. Ambil profil kompetensi pengguna dan buat peta skor
+    const user = await User.findById(userId).select('competencyProfile').lean();
+    const scoreMap = new Map(
+      (user?.competencyProfile || []).map(comp => [comp.featureId.toString(), comp.score])
+    );
+
+    // 2. Ambil semua fitur yang ada di database
+    const allFeatures = await Feature.find({}).sort({ name: 1 }).lean();
+
+    // 3. Inisialisasi struktur data untuk pengelompokan
+    const groupedFeatures = {
+      Dasar: [],
+      Menengah: [],
+      Lanjutan: [],
+    };
+
+    // 4. Kelompokkan fitur dan tambahkan skor pengguna
+    allFeatures.forEach(feature => {
+      const featureData = {
+        name: feature.name,
+        score: scoreMap.get(feature._id.toString()) || 0,
+      };
+      if (groupedFeatures[feature.group]) {
+        groupedFeatures[feature.group].push(featureData);
+      }
+    });
+
+    res.status(200).json({ competencyProfile: groupedFeatures });
+  } catch (error) {
+    console.error("Error fetching competency profile:", error);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 };

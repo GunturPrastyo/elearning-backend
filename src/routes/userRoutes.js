@@ -8,6 +8,7 @@ import {
   updateUserProfile,
   changePassword,
   completeTopic,
+  getCompetencyProfile,
   getAllUsers,
   createUser,
   deleteUser,
@@ -29,6 +30,7 @@ router.put("/profile", protect, upload.single("avatar"), updateUserProfile);
 router.put("/change-password", protect, changePassword);
 
 router.post("/complete-topic", protect, completeTopic);
+router.get("/competency-profile", protect, getCompetencyProfile);
 
 // Rute Admin (Dilindungi oleh middleware 'protect' dan 'admin')
 router.route("/")

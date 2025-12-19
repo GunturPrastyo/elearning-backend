@@ -7,7 +7,8 @@ import Topik from "../models/Topik.js";
 import Materi from "../models/Materi.js";
 import Question from "../models/Question.js";
 import User from "../models/User.js";
-import { hasCompletedModulePostTest } from "./resultController.js";
+import { hasCompletedModulePostTest } from "./resultController.js"; // Impor fungsi helper dari resultController
+import { isModuleLockedForUser } from "./userController.js"; // Impor fungsi helper dari userController
 
 export const getModules = async (req, res) => {
   try {
@@ -56,27 +57,8 @@ export const getModulesWithProgress = async (req, res) => {
     const userCountMap = new Map(userCountsByModule.map(item => [item._id.toString(), item.userCount]));
 
     const modulesWithDetails = modules.map(modul => {
-      const modulLevel = categoryHierarchy[modul.category] || 1;
-      let isModulLocked = false;
-
-      // Logika penguncian modul berdasarkan level pengguna
-      if (!user.learningLevel || user.learningLevel === 'Dasar') {
-        // Jika user belum mengambil pre-test, kunci semua modul.
-        isModulLocked = modul.category !== 'mudah';
-      } else {
-        // Jika user sudah punya level, terapkan logika penguncian berdasarkan level.
-        if (user.learningLevel === 'Lanjutan') { // Lanjut
-          isModulLocked = false; // Semua modul terbuka
-        } else if (user.learningLevel === 'Menengah') {
-          // Buka modul 'mudah' dan 'sedang'
-          isModulLocked = !['mudah', 'sedang'].includes(modul.category);
-        } else {
-          // Default untuk 'Dasar' (atau jika ada level lain yang tidak terduga)
-          // Hanya buka modul 'mudah'
-          isModulLocked = modul.category !== 'mudah';
-        }
-      }
-
+      // Gunakan fungsi helper terpusat dari userController
+      const isModulLocked = isModuleLockedForUser(modul.category, user.learningLevel);
       const topicsForThisModule = allTopics.filter(t => t.modulId.equals(modul._id));
       const topicIdsForThisModule = topicsForThisModule.map(t => t._id);
 
@@ -112,15 +94,28 @@ export const getModulesWithProgress = async (req, res) => {
       const totalTopics = topicsWithStatus.length;
       const progress = totalTopics > 0 ? Math.round((completedTopicsCount / totalTopics) * 100) : 0;
 
+      // Tentukan status modul secara dinamis berdasarkan progres dan status kunci
+      let status;
+      if (isModulLocked) {
+        status = 'Terkunci';
+      } else if (progress === 100) {
+        status = 'Selesai';
+      } else if (progress > 0) {
+        status = 'Berjalan';
+      } else {
+        status = 'Belum Mulai';
+      }
+
       return {
         ...modul,
-        isLocked: isModulLocked,
         progress,
         completedTopics: completedTopicsCount,
         totalTopics,
         userCount, // Tambahkan userCount
         totalDuration, // Tambahkan totalDuration
         topics: topicsWithStatus, // Sertakan topik dengan statusnya
+        isLocked: isModulLocked, // Pastikan isLocked tetap ada
+        status, // Tambahkan status yang sudah dihitung
       };
     });
 

@@ -23,7 +23,7 @@ import {
     deleteResultByType,
     deleteProgress,
     getCompetencyMap
-} from "../controllers/resultController.js";
+ } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
 router.route("/by-type/:testType").delete(protect, deleteResultByType);
@@ -54,7 +54,6 @@ router.route("/comparison-analytics").get(protect, getComparisonAnalytics);
 router.route("/recommendations").get(protect, getLearningRecommendations);
 router.route("/topics-to-reinforce").get(protect, getTopicsToReinforce);
 router.route("/streak").get(protect, getDailyStreak); // <-- Tambahkan rute yang hilang
-router.route("/competency-map").get(protect, getCompetencyMap); // <-- Rute baru untuk Peta Kompetensi
 
 
 export default router;

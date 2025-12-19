@@ -11,16 +11,6 @@ export const createQuestion = async (req, res) => {
       return res.status(400).json({ message: "Pertanyaan tidak boleh kosong." });
     }
 
-    let moduleFeatures = [];
-    // Jika ini adalah post-test-modul, ambil fitur dari modul induk
-    if (testType === 'post-test-modul' && modulId) {
-      const modul = await Modul.findById(modulId).select('features').lean();
-      if (modul && modul.features) {
-        // Siapkan format fitur untuk soal dengan bobot default 1
-        moduleFeatures = modul.features.map(featureId => ({ featureId, weight: 1 }));
-      }
-    }
-
     // Simpan semua pertanyaan
     const createdQuestions = await Promise.all(
       questions.map((q) => {
@@ -28,11 +18,8 @@ export const createQuestion = async (req, res) => {
           questionText: q.questionText,
           options: q.options,
           answer: q.answer,
-          // Tambahkan fitur ke setiap soal yang dibuat
-          // Jika bukan post-test-modul, `moduleFeatures` akan menjadi array kosong
-          // dan akan menggunakan `q.features` dari request jika ada (misal: pre-test-global)
-          features: testType === 'post-test-modul' ? moduleFeatures : (q.features || []),
-          modulId: modulId || null,
+          // Untuk pre-test, modulId datang dari 'q'. Untuk post-test, dari parameter.
+          modulId: modulId || q.modulId || null,
           topikId: topikId || null,
           testType,
           durationPerQuestion: q.durationPerQuestion || 60, // Simpan durasi
@@ -121,7 +108,6 @@ export const updatePreTestQuestions = async (req, res) => {
     const inserted = await Question.insertMany(
       questions.map((q) => ({
         ...q,
-        features: q.features || [], // Tambahkan ini
         testType: "pre-test-global",
       }))
     );
@@ -166,13 +152,6 @@ export const updatePostTestModulQuestions = async (req, res) => {
       return res.status(400).json({ message: "Modul ID tidak valid atau tidak ada." });
     }
 
-    // Ambil fitur dari modul induk untuk disinkronkan ke soal
-    const modul = await Modul.findById(modulId).select('features').lean();
-    let moduleFeatures = [];
-    if (modul && modul.features) {
-      moduleFeatures = modul.features.map(featureId => ({ featureId, weight: 1 }));
-    }
-
     // Hapus semua soal lama dulu
     await Question.deleteMany({ modulId: modulId, testType: "post-test-modul" });
 
@@ -180,7 +159,6 @@ export const updatePostTestModulQuestions = async (req, res) => {
     const inserted = await Question.insertMany(
       questions.map((q) => ({
         ...q,
-        features: moduleFeatures, // Terapkan fitur yang sudah disinkronkan dari modul
         modulId: req.params.modulId,
         testType: "post-test-modul",
         topikId: q.topikId || null, // Simpan topikId jika ada
@@ -248,7 +226,6 @@ export const updateQuestion = async (req, res) => {
       ...q,
       modulId,
       topikId,
-      features: q.features || [], // Tambahkan ini
       testType: "post-test-topik",
       durationPerQuestion: q.durationPerQuestion || 60,
       subMateriId: q.subMateriId || null,
@@ -324,7 +301,6 @@ export const updatePostTestTopikQuestions = async (req, res) => {
         ...q,
         modulId,
         topikId,
-        features: q.features || [], // Tambahkan ini
         testType: "post-test-topik",
       }))
     );

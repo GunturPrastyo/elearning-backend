@@ -1,17 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
-const modulStatusSchema = new mongoose.Schema(
-  {
-    modulId: { type: mongoose.Schema.Types.ObjectId, ref: "Modul", required: true },
-    status: { type: String, enum: ["terkunci", "selesai"], default: "terkunci" },
-    progress: { type: Number, default: 0 }, // persenan progress 0-100
-  },
-  { _id: false }
-);
-
-
-
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
@@ -30,6 +19,11 @@ const userSchema = new mongoose.Schema({
     featureId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Feature',
+      required: true,
+    },
+    modulId: { // Tambahkan field ini untuk melacak asal skor
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Modul',
       required: true,
     },
     score: {

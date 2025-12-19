@@ -54,10 +54,6 @@ const questionSchema = new mongoose.Schema(
       ref: "Materi.subMateris", // Referensi ke sub-dokumen
       default: null,
     },
-    features: {
-      type: [featureWeightSchema],
-      default: [],
-    },
   },
   {
     timestamps: true,
