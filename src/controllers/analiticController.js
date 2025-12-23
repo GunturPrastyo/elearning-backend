@@ -1,6 +1,7 @@
 import Result from "../models/Result.js";
 import User from "../models/User.js";
 import Topik from "../models/Topik.js";
+import Modul from "../models/Modul.js";
 
 /**
  * @desc    Get aggregated analytics data for the admin dashboard
@@ -192,59 +193,71 @@ export const getAdminAnalytics = async (req, res) => {
     ]);
     const overallAverageTime = overallTestTimeStats.length > 0 ? overallTestTimeStats[0].overallAverageTime : 600; // Default 10 menit jika tidak ada data
 
-    const moduleAnalytics = await Result.aggregate([
-      // Tahap 1: Filter tes yang relevan
-      {
-        $match: {
-          testType: { $in: ["post-test-topik", "post-test-modul"] },
-          modulId: { $exists: true, $ne: null },
-        },
-      },
-      // Tahap 2: Urutkan untuk mendapatkan skor terbaru per user per modul
-      { $sort: { timestamp: -1 } },
-      {
-        $group: {
-          _id: { modulId: "$modulId", userId: "$userId" },
-          latestScore: { $first: "$score" },
-          averageTime: { $avg: "$timeTaken" } // Rata-rata waktu dari semua percobaan user di modul ini
-        }
-      },
-      // Tahap 3: Kelompokkan berdasarkan modul untuk agregasi
-      {
-        $group: {
-          _id: "$_id.modulId",
-          averageScore: { $avg: "$latestScore" }, // Rata-rata dari skor terbaru setiap user
-          averageTime: { $avg: "$averageTime" }, // Rata-rata dari rata-rata waktu setiap user
-          totalStudents: { $sum: 1 }, // Jumlah siswa unik
-          remedialStudentCount: { // Jumlah siswa unik yang skor terbarunya < 70
-            $sum: { $cond: [{ $lt: ["$latestScore", 70] }, 1, 0] },
-          },
-        }
-      },
+    const moduleAnalytics = await Modul.aggregate([
       {
         $lookup: {
-          from: "moduls",
-          localField: "_id",
-          foreignField: "_id",
-          as: "modulDetails"
+          from: "results",
+          let: { modulId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$modulId", "$$modulId"] },
+                    { $in: ["$testType", ["post-test-topik", "post-test-modul"]] }
+                  ]
+                }
+              }
+            },
+            { $sort: { timestamp: -1 } },
+            {
+              $group: {
+                _id: "$userId",
+                latestScore: { $first: "$score" },
+                averageTime: { $avg: "$timeTaken" }
+              }
+            }
+          ],
+          as: "studentResults"
         }
       },
-      { $unwind: "$modulDetails" },
       {
         $project: {
           _id: 0,
-          moduleTitle: "$modulDetails.title",
+          moduleTitle: "$title",
+          totalStudents: { $size: "$studentResults" },
+          averageScore: {
+            $cond: [{ $eq: [{ $size: "$studentResults" }, 0] }, 0, { $avg: "$studentResults.latestScore" }]
+          },
+          averageTime: {
+            $cond: [{ $eq: [{ $size: "$studentResults" }, 0] }, 0, { $avg: "$studentResults.averageTime" }]
+          },
+          remedialStudentCount: {
+            $size: {
+              $filter: {
+                input: "$studentResults",
+                as: "res",
+                cond: { $lt: ["$$res.latestScore", 70] }
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
           averageTimeInSeconds: { $round: ["$averageTime", 0] },
           averageScore: { $round: ["$averageScore", 1] },
           remedialRate: {
             $round: [
-              { $cond: [
-                  { $eq: ["$totalStudents", 0] }, 0, 
-                  { $multiply: [{ $divide: ["$remedialStudentCount", "$totalStudents"] }, 100] }] },
+              {
+                $cond: [
+                  { $eq: ["$totalStudents", 0] }, 0,
+                  { $multiply: [{ $divide: ["$remedialStudentCount", "$totalStudents"] }, 100] }
+                ]
+              },
               0
             ]
           },
-          // Kalkulasi Skor Berbobot untuk Status
           scorePoints: {
             $switch: {
               branches: [
@@ -263,13 +276,17 @@ export const getAdminAnalytics = async (req, res) => {
               default: 0 // Baik
             }
           },
+        }
+      },
+      {
+        $addFields: {
           remedialPoints: {
             $switch: {
               branches: [
-                { case: { $gt: ["$remedialRate", 25] }, then: 2 }, // Buruk
-                { case: { $gt: ["$remedialRate", 10] }, then: 1 }, // Sedang
+                { case: { $gt: ["$remedialRate", 25] }, then: 2 },
+                { case: { $gt: ["$remedialRate", 10] }, then: 1 },
               ],
-              default: 0 // Baik
+              default: 0
             }
           }
         }
@@ -278,9 +295,9 @@ export const getAdminAnalytics = async (req, res) => {
         $addFields: {
           weightedScore: {
             $add: [
-              { $multiply: ["$scorePoints", 0.5] }, // Bobot nilai 50%
-              { $multiply: ["$remedialPoints", 0.3] }, // Bobot remedial 30%
-              { $multiply: ["$timePoints", 0.2] } // Bobot waktu 20%
+              { $multiply: ["$scorePoints", 0.5] },
+              { $multiply: ["$remedialPoints", 0.3] },
+              { $multiply: ["$timePoints", 0.2] }
             ]
           }
         }
