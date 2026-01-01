@@ -23,6 +23,7 @@ const app = express();
 const allowedOrigins = [
   process.env.FRONTEND_URL || "https://kelas-smk.vercel.app",
   "http://localhost:3000", // Untuk development lokal
+  "https://localhost:3000", // Untuk development lokal dengan HTTPS
 ];
 
 const corsOptions = {

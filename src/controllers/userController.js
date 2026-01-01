@@ -95,7 +95,7 @@ export const getUserProfile = async (req, res) => {
 // ========================= REGISTER =========================
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, confirmPassword, role } = req.body;
+    const { name, email, password, confirmPassword, role, cfTurnstileToken } = req.body;
 
     // Validasi input dasar
     if (!name || !email || !password || !confirmPassword) {
@@ -116,6 +116,27 @@ export const registerUser = async (req, res) => {
     if (password !== confirmPassword) {
       return res.status(400).json({ message: "Konfirmasi password tidak cocok." });
     }
+
+    // --- Verifikasi Cloudflare Turnstile ---
+    if (!cfTurnstileToken) {
+      return res.status(400).json({ message: "Mohon selesaikan verifikasi keamanan (CAPTCHA)." });
+    }
+
+    const secretKey = process.env.TURNSTILE_SECRET_KEY; // Pastikan nama variabel ini sesuai dengan .env Anda
+    const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+    const formData = new URLSearchParams();
+    formData.append('secret', secretKey);
+    formData.append('response', cfTurnstileToken);
+    formData.append('remoteip', req.ip);
+
+    const turnstileResult = await fetch(verifyUrl, { method: 'POST', body: formData });
+    const turnstileOutcome = await turnstileResult.json();
+
+    if (!turnstileOutcome.success) {
+      return res.status(400).json({ message: "Verifikasi keamanan gagal, silakan coba lagi." });
+    }
+    // ---------------------------------------
 
     const existingUser = await User.findOne({ email });
     if (existingUser)
