@@ -1751,6 +1751,42 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
   res.json(groupedFeatures);
 });
 
+// @desc    Cek apakah user sudah mengerjakan Pre-Test
+// @route   GET /api/results/check-pre-test
+// @access  Private
+const checkPreTestStatus = async (req, res) => {
+  try {
+    // Mengambil ID user dari token (asumsi middleware auth menyimpan user di req.user)
+    const userId = req.user._id;
+
+    // Cari data result dengan tipe/kategori 'Pre-Test' milik user tersebut
+    // Pastikan field 'category' atau 'type' sesuai dengan yang Anda simpan saat submit pre-test
+    const preTestResult = await Result.findOne({
+      userId: userId,
+      testType: 'pre-test-global' 
+    });
+
+    if (preTestResult) {
+      // Jika data ditemukan, kirim status true dan levelnya
+      return res.status(200).json({
+        hasTakenPreTest: true,
+        learningLevel: preTestResult.learningLevel || 'dasar', // Ambil level jika ada
+        score: preTestResult.score
+      });
+    }
+
+    // Jika data tidak ditemukan
+    return res.status(200).json({
+      hasTakenPreTest: false,
+      learningLevel: null
+    });
+
+  } catch (error) {
+    console.error('Error checking pre-test status:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
 
 export {
     createResult, getResults, getResultsByUser, submitTest, logStudyTime,
@@ -1761,5 +1797,5 @@ export {
     getLatestResultByType, deleteResultByType, deleteProgress, getCompetencyMap,
     hasCompletedModulePostTest,
     getSubTopicPerformance,
-    generateCertificate
+    generateCertificate, checkPreTestStatus,
 };
