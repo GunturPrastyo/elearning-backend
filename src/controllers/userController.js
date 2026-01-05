@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
@@ -7,6 +8,8 @@ import Feature from "../models/Feature.js"; // Diperlukan untuk kalkulasi
 
 import fs from "fs";
 import path from "path";
+import sendEmail from "../utils/sendEmail.js";
+
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // --- FUNGSI HELPER BARU UNTUK MENGHITUNG & UPDATE LEVEL BELAJAR ---
@@ -336,6 +339,220 @@ export const googleAuth = async (req, res) => {
   } catch (error) {
     console.error("Google Auth Error:", error);
     res.status(500).json({ message: "Autentikasi Google gagal. Silakan coba lagi." });
+  }
+};
+
+// ========================= FORGOT PASSWORD =========================
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      console.log("[ForgotPassword] Gagal: Email tidak disertakan dalam request.");
+      return res.status(400).json({ message: 'Email wajib diisi.' });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      console.log(`[ForgotPassword] Gagal: Email ${email} tidak ditemukan.`);
+      return res.status(404).json({ message: 'Email tidak terdaftar.' });
+    }
+
+    // Cek jika user login menggunakan Google (tidak punya password)
+    if (!user.password) {
+      console.log(`[ForgotPassword] Gagal: User ${email} adalah akun Google (tanpa password).`);
+      // Gunakan status 200 agar tidak muncul error merah di console browser, tapi kirim flag success: false
+      return res.status(200).json({ success: false, message: 'Akun ini menggunakan login Google. Silakan login dengan Google.' });
+    }
+
+    // 1. Generate Token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // 2. Hash token sebelum disimpan ke DB
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+
+    // 3. Set Expiration (15 menit)
+    const resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+
+    user.resetPasswordToken = resetPasswordToken;
+    user.resetPasswordExpire = resetPasswordExpire;
+    await user.save({ validateBeforeSave: false });
+
+    // 4. Buat Reset URL (Arahkan ke Frontend)
+    // Pastikan FRONTEND_URL ada di .env, atau fallback ke localhost:3000
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+
+    // 5. Buat Template Email HTML
+    const message = `Anda meminta reset password. Silakan klik link berikut: ${resetUrl}`; // Fallback untuk klien email teks biasa
+    
+    const htmlMessage = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+          }
+          .container {
+            max-width: 600px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 1px solid #e5e7eb;
+          }
+          .header {
+            background-color: #2563eb; /* Warna biru tema */
+            padding: 30px 20px;
+            text-align: center;
+          }
+          .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+          }
+          .hero-icon {
+            font-size: 64px;
+            text-align: center;
+            margin: 20px 0;
+            display: block;
+          }
+          .content {
+            padding: 20px 30px 40px;
+            color: #374151;
+            text-align: center;
+          }
+          .button {
+            background-color: #2563eb;
+            color: #ffffff !important;
+            padding: 14px 28px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-block;
+            margin: 25px 0;
+            box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+            transition: background-color 0.3s;
+          }
+          .button:hover {
+            background-color: #1d4ed8;
+          }
+          .footer {
+            background-color: #f9fafb;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #6b7280;
+            border-top: 1px solid #e5e7eb;
+          }
+          .link-fallback {
+            font-size: 12px;
+            color: #6b7280;
+            word-break: break-all;
+            margin-top: 20px;
+            text-align: left;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>KELAS</h1>
+          </div>
+          <div class="content">
+            <div class="hero-icon">🔐</div>
+            <h2 style="margin-top: 0; color: #111827;">Reset Password</h2>
+            <p style="text-align: left;">Halo <strong>${user.name}</strong>,</p>
+            <p style="text-align: left;">Kami menerima permintaan untuk mereset password akunmu. Klik tombol di bawah ini untuk membuat password baru:</p>
+            
+            <a href="${resetUrl}" class="button">Reset Password Saya</a>
+
+            <p style="text-align: left;">Link ini akan kedaluwarsa dalam <strong>15 menit</strong>.</p>
+            <p style="text-align: left;">Jika Anda tidak meminta ini, abaikan saja email ini. Akun Anda tetap aman.</p>
+            
+            <div class="link-fallback">
+              <p>Jika tombol di atas tidak berfungsi, salin dan tempel link berikut ke browser Anda:</p>
+              <a href="${resetUrl}" style="color: #2563eb;">${resetUrl}</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} E-Learning Personalisasi. All rights reserved.</p>
+            <p>Email ini dikirim secara otomatis, mohon jangan dibalas.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Reset Password Token',
+        message,
+        html: htmlMessage, // Kirim versi HTML
+      });
+
+      res.status(200).json({ success: true, message: 'Jika email terdaftar, link reset telah dikirim.' });
+    } catch (error) {
+      console.error("Email send error:", error);
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+      return res.status(500).json({ message: 'Email tidak dapat dikirim.' });
+    }
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+// ========================= RESET PASSWORD =========================
+export const resetPassword = async (req, res) => {
+  try {
+    // 1. Hash token dari URL agar cocok dengan yang di DB
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    // 2. Cari user dengan token valid dan belum expired
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Token tidak valid atau telah kedaluwarsa" });
+    }
+
+    // 3. Set password baru
+    if (req.body.password !== req.body.confirmPassword) {
+       return res.status(400).json({ message: "Password tidak cocok" });
+    }
+    user.password = await bcrypt.hash(req.body.password, 10);
+    
+    // 4. Hapus token reset
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+
+    await user.save();
+
+    res.status(200).json({ message: "Password berhasil diubah. Silakan login." });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 };
 

@@ -24,7 +24,7 @@ const userSchema = new mongoose.Schema({
     modulId: { // Tambahkan field ini untuk melacak asal skor
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Modul',
-      required: true,
+      required: false,
     },
     score: {
       type: Number,
@@ -33,6 +33,8 @@ const userSchema = new mongoose.Schema({
     },
     _id: false // Tidak perlu _id untuk setiap item array
   }],
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
 
 }, { timestamps: true });
 

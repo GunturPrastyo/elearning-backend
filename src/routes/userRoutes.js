@@ -12,6 +12,8 @@ import {
   getAllUsers,
   createUser,
   deleteUser,
+  forgotPassword,
+  resetPassword,
 } from "../controllers/userController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/upload.js";
@@ -21,6 +23,8 @@ const router = express.Router();
 // Rute Autentikasi
 router.post("/register", registerUser);
 router.post("/login", loginUser);
+router.post("/forgot-password", forgotPassword); // Rute baru
+router.put("/reset-password/:token", resetPassword); // Rute reset password
 router.post("/google-auth", googleAuth); // Menggunakan rute dan controller terpadu
 router.post("/logout", logoutUser);
 
