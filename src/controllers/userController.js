@@ -8,7 +8,11 @@ import Feature from "../models/Feature.js"; // Diperlukan untuk kalkulasi
 
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from 'url';
 import sendEmail from "../utils/sendEmail.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -41,7 +45,8 @@ export const recalculateUserLearningLevel = async (userId) => {
   // 2. Kelompokkan skor agregat berdasarkan grupnya
   const groupScores = { Dasar: [], Menengah: [], Lanjutan: [] };
   Object.values(aggregatedScores).forEach(aggScore => {
-    if (groupScores[aggScore.group]) groupScores[aggScore.group].push(aggScore.score);
+    const groupName = aggScore.group ? aggScore.group.charAt(0).toUpperCase() + aggScore.group.slice(1).toLowerCase() : 'Dasar';
+    if (groupScores[groupName]) groupScores[groupName].push(aggScore.score);
   });
 
   const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
@@ -56,24 +61,31 @@ export const recalculateUserLearningLevel = async (userId) => {
 
 // --- FUNGSI HELPER BARU UNTUK MENENTUKAN STATUS PENGUNCIAN MODUL ---
 export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
-  const level = userLearningLevel || 'Dasar';
+  if (!userLearningLevel) return true;
+
+  const level = userLearningLevel.charAt(0).toUpperCase() + userLearningLevel.slice(1).toLowerCase();
+  const category = moduleCategory ? moduleCategory.toLowerCase() : '';
+
+  // Normalisasi kategori modul agar mendukung 'mudah'/'dasar', 'sedang'/'menengah', dll.
+  const isDasar = ['dasar', 'mudah'].includes(category);
+  const isMenengah = ['menengah', 'sedang'].includes(category);
 
   // Aturan 1: Jika level pengguna 'Lanjutan', semua modul terbuka.
-  if (level === 'Lanjutan') {
+  if (level === 'Lanjutan' || level === 'Lanjut') {
     return false;
   }
 
   // Aturan 2: Jika level pengguna 'Menengah', modul 'mudah' dan 'sedang' terbuka.
   if (level === 'Menengah') {
-    // Modul terkunci jika kategorinya BUKAN 'mudah' ATAU 'sedang'.
-    return !['mudah', 'sedang'].includes(moduleCategory);
+    // Modul terbuka jika kategorinya Dasar atau Menengah. Terkunci jika Lanjutan/Sulit.
+    return !(isDasar || isMenengah);
   }
 
   // Aturan 3 (Default): Jika level pengguna 'Dasar' (atau belum ditentukan),
   // hanya modul 'mudah' yang terbuka.
   if (level === 'Dasar') {
-    // Modul terkunci jika kategorinya BUKAN 'mudah'.
-    return moduleCategory !== 'mudah';
+    // Modul terkunci jika kategorinya BUKAN Dasar.
+    return !isDasar;
   }
 
   return true; // Defaultnya, kunci modul jika ada level yang tidak dikenal.
@@ -196,11 +208,15 @@ export const updateUserProfile = async (req, res) => {
     // Handle upload avatar baru
     if (req.file) {
       // Hapus avatar lama jika ada dan bukan URL dari Google
-      if (user.avatar && !user.avatar.startsWith("http")) {
-        const __dirname = path.dirname(new URL(import.meta.url).pathname.substring(1));
-        const oldPath = path.join(__dirname, "..", "..", "public", "uploads", user.avatar);
+      if (user.avatar && !user.avatar.startsWith("http") && !user.avatar.includes("placeholder")) {
+        const avatarFileName = path.basename(user.avatar);
+        const oldPath = path.join(__dirname, "..", "..", "public", "uploads", avatarFileName);
         if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
+          try {
+            fs.unlinkSync(oldPath);
+          } catch (err) {
+            console.error("Gagal menghapus avatar lama:", err);
+          }
         }
       }
       user.avatar = req.file.filename;
@@ -594,9 +610,18 @@ export const getCompetencyProfile = async (req, res) => {
 
     // 1. Ambil profil kompetensi pengguna dan buat peta skor
     const user = await User.findById(userId).select('competencyProfile').lean();
-    const scoreMap = new Map(
-      (user?.competencyProfile || []).map(comp => [comp.featureId.toString(), comp.score])
-    );
+    
+    // Agregasi skor: Ambil skor tertinggi untuk setiap fitur unik
+    const scoreMap = new Map();
+    if (user && user.competencyProfile) {
+      user.competencyProfile.forEach(comp => {
+        const featureId = comp.featureId.toString();
+        const currentScore = scoreMap.get(featureId) || 0;
+        if (comp.score > currentScore) {
+          scoreMap.set(featureId, comp.score);
+        }
+      });
+    }
 
     // 2. Ambil semua fitur yang ada di database
     const allFeatures = await Feature.find({}).sort({ name: 1 }).lean();

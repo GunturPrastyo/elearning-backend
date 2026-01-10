@@ -144,7 +144,11 @@ const submitTest = async (req, res) => {
         totalMaxWeight += data.max;
       });
 
-      accuracyScore = totalMaxWeight > 0 ? (totalEarnedWeight / totalMaxWeight) * 100 : 0;
+      if (totalMaxWeight > 0) {
+        accuracyScore = (totalEarnedWeight / totalMaxWeight) * 100;
+      } else {
+        accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+      }
       // --- END: Logika Kalkulasi Skor Akurasi untuk Pre-test Global ---
 
     } else {
@@ -433,8 +437,10 @@ const submitTest = async (req, res) => {
         Lanjutan: [],
       };
       calculatedFeatureScores.forEach(fs => {
-        if (groupScores[fs.group]) {
-          groupScores[fs.group].push(fs.score);
+        // Normalisasi nama grup (Title Case) untuk mencocokkan kunci groupScores
+        const groupName = fs.group ? fs.group.charAt(0).toUpperCase() + fs.group.slice(1).toLowerCase() : 'Dasar';
+        if (groupScores[groupName]) {
+          groupScores[groupName].push(fs.score);
         }
       });
 
@@ -476,7 +482,11 @@ const submitTest = async (req, res) => {
       // Simpan profil kompetensi baru ke user
       const user = await User.findById(userId);
       user.competencyProfile = competencyProfileData;
-      // Hitung ulang level belajar berdasarkan data baru dan simpan
+      
+      // FIX: Simpan user terlebih dahulu agar data competencyProfile tersimpan di DB
+      // Hal ini penting karena recalculateUserLearningLevel akan melakukan query ke DB
+      await user.save();
+
       user.learningLevel = await recalculateUserLearningLevel(userId);
       await user.save();
       learningPathResult = user.learningLevel; // Gunakan level yang baru dihitung untuk respons
@@ -1723,9 +1733,16 @@ const generateCertificate = asyncHandler(async (req, res) => {
 const getCompetencyMap = asyncHandler(async (req, res) => {  
   // 1. Ambil profil kompetensi pengguna dan buat peta skor
   const user = await User.findById(req.user._id).select('competencyProfile').lean();
-  const scoreMap = new Map(
-    (user?.competencyProfile || []).map(comp => [comp.featureId.toString(), comp.score])
-  );
+  const scoreMap = new Map();
+  if (user && user.competencyProfile) {
+    user.competencyProfile.forEach(comp => {
+      const featureId = comp.featureId.toString();
+      const currentScore = scoreMap.get(featureId) || 0;
+      if (comp.score > currentScore) {
+        scoreMap.set(featureId, comp.score);
+      }
+    });
+  }
 
   // 2. Ambil semua fitur yang ada di database
   const allFeatures = await Feature.find({}).sort({ name: 1 }).lean();
@@ -1767,10 +1784,13 @@ const checkPreTestStatus = async (req, res) => {
     });
 
     if (preTestResult) {
+      // Ambil data user terbaru untuk mendapatkan learningLevel yang paling update
+      const user = await User.findById(userId).select('learningLevel');
+
       // Jika data ditemukan, kirim status true dan levelnya
       return res.status(200).json({
         hasTakenPreTest: true,
-        learningLevel: preTestResult.learningLevel || 'dasar', // Ambil level jika ada
+        learningLevel: user?.learningLevel || preTestResult.learningLevel || 'dasar', // Prioritaskan level dari User
         score: preTestResult.score
       });
     }
