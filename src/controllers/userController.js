@@ -137,7 +137,13 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Mohon selesaikan verifikasi keamanan (CAPTCHA)." });
     }
 
-    const secretKey = process.env.TURNSTILE_SECRET_KEY; // Pastikan nama variabel ini sesuai dengan .env Anda
+    const secretKey = process.env.TURNSTILE_SECRET_KEY;
+    
+    if (!secretKey) {
+      console.error("CRITICAL: TURNSTILE_SECRET_KEY tidak ditemukan di environment variables.");
+      return res.status(500).json({ message: "Terjadi kesalahan konfigurasi server." });
+    }
+
     const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
     const formData = new URLSearchParams();
