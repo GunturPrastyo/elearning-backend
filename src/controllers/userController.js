@@ -110,7 +110,7 @@ export const getUserProfile = async (req, res) => {
 // ========================= REGISTER =========================
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, confirmPassword, role, cfTurnstileToken } = req.body;
+    const { name, email, password, confirmPassword, role } = req.body;
 
     // Validasi input dasar
     if (!name || !email || !password || !confirmPassword) {
@@ -131,36 +131,6 @@ export const registerUser = async (req, res) => {
     if (password !== confirmPassword) {
       return res.status(400).json({ message: "Konfirmasi password tidak cocok." });
     }
-
-    // --- Verifikasi Cloudflare Turnstile ---
-    if (!cfTurnstileToken) {
-      return res.status(400).json({ message: "Mohon selesaikan verifikasi keamanan (CAPTCHA)." });
-    }
-
-    const secretKey = process.env.TURNSTILE_SECRET_KEY;
-    
-    if (!secretKey) {
-      console.error("CRITICAL: TURNSTILE_SECRET_KEY tidak ditemukan di environment variables.");
-      return res.status(500).json({ message: "Terjadi kesalahan konfigurasi server." });
-    }
-
-    const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-
-    const formData = new URLSearchParams();
-    formData.append('secret', secretKey);
-    formData.append('response', cfTurnstileToken);
-    // remoteip opsional. Di Vercel/Proxy, req.ip bisa tidak akurat jika trust proxy belum diset.
-    // Lebih aman dihapus untuk menghindari penolakan karena IP proxy.
-    // formData.append('remoteip', req.ip); 
-
-    const turnstileResult = await fetch(verifyUrl, { method: 'POST', body: formData });
-    const turnstileOutcome = await turnstileResult.json();
-
-    if (!turnstileOutcome.success) {
-      console.error("Turnstile Verification Failed:", JSON.stringify(turnstileOutcome));
-      return res.status(400).json({ message: "Verifikasi keamanan gagal, silakan coba lagi." });
-    }
-    // ---------------------------------------
 
     const existingUser = await User.findOne({ email });
     if (existingUser)
