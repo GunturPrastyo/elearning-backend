@@ -52,6 +52,26 @@ app.use(express.static("public"));
 // app.use("/uploads", express.static("uploads"));
 app.use("/uploads", express.static("public/uploads"));
 
+// ====================== DATABASE CONNECTION ======================
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log("✅ Database connected successfully");
+  } catch (err) {
+    console.error("❌ Database connection failed:", err.message);
+  }
+};
+
+// Middleware untuk memastikan koneksi database pada setiap request (Penting untuk Vercel)
+app.use(async (req, res, next) => {
+  await connectDB();
+  next();
+});
+
 // ====================== ROUTES ======================
 app.use("/api/modul", modulRoutes);
 app.use("/api/topik", topikRoutes);
@@ -65,25 +85,19 @@ app.use("/api/features", featureRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analiticRoutes);
 
-// ====================== MONGODB CONNECT ======================
-mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => {
-    console.log("✅ Database connected successfully");
-    const PORT = process.env.PORT || 5000;
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("❌ Database connection failed:", err.message);
-    process.exit(1);
-  });
-
 // ====================== DEFAULT ROUTE ======================
 app.get("/", (req, res) => {
   res.json({ message: "Server is running 🚀" });
 });
+
+// ====================== SERVER START ======================
+// Hanya jalankan app.listen jika di lingkungan development (lokal)
+// Di Vercel, export app akan ditangani oleh runtime Vercel
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
+
+export default app;
