@@ -29,9 +29,11 @@ const allowedOrigins = [
 const corsOptions = {
   origin: function (origin, callback) {
     // Izinkan request jika origin ada di dalam whitelist atau jika request tidak memiliki origin (seperti dari Postman)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // Tambahkan izin untuk semua domain .vercel.app (untuk preview deployments)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || (origin && origin.endsWith('.vercel.app'))) {
       callback(null, true);
     } else {
+      console.error("❌ CORS Blocked Origin:", origin);
       callback(new Error("Not allowed by CORS"));
     }
   },
@@ -63,13 +65,20 @@ const connectDB = async () => {
     console.log("✅ Database connected successfully");
   } catch (err) {
     console.error("❌ Database connection failed:", err.message);
+    // Throw error agar middleware bisa menangkap kegagalan koneksi
+    throw err;
   }
 };
 
 // Middleware untuk memastikan koneksi database pada setiap request (Penting untuk Vercel)
 app.use(async (req, res, next) => {
-  await connectDB();
-  next();
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("🔥 Middleware DB Error:", error);
+    res.status(500).json({ message: "Gagal terhubung ke database", error: error.message });
+  }
 });
 
 // ====================== ROUTES ======================
