@@ -143,12 +143,15 @@ export const registerUser = async (req, res) => {
     const formData = new URLSearchParams();
     formData.append('secret', secretKey);
     formData.append('response', cfTurnstileToken);
-    formData.append('remoteip', req.ip);
+    // remoteip opsional. Di Vercel/Proxy, req.ip bisa tidak akurat jika trust proxy belum diset.
+    // Lebih aman dihapus untuk menghindari penolakan karena IP proxy.
+    // formData.append('remoteip', req.ip); 
 
     const turnstileResult = await fetch(verifyUrl, { method: 'POST', body: formData });
     const turnstileOutcome = await turnstileResult.json();
 
     if (!turnstileOutcome.success) {
+      console.error("Turnstile Verification Failed:", JSON.stringify(turnstileOutcome));
       return res.status(400).json({ message: "Verifikasi keamanan gagal, silakan coba lagi." });
     }
     // ---------------------------------------

@@ -3,7 +3,6 @@ import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
 import DOMPurify from "../utils/sanitize.js";
 
-
 // Helper function to convert YouTube watch URL to embed URL
 const getEmbedUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
