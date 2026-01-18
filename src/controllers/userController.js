@@ -381,6 +381,7 @@ export const forgotPassword = async (req, res) => {
     // Pastikan FRONTEND_URL ada di .env, atau fallback ke localhost:3000
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
+    const logoUrl = `${frontendUrl}/logo1.png`; // Mengambil logo dari folder public frontend
 
     // 5. Buat Template Email HTML
     const message = `Anda meminta reset password. Silakan klik link berikut: ${resetUrl}`; // Fallback untuk klien email teks biasa
@@ -464,6 +465,7 @@ export const forgotPassword = async (req, res) => {
       <body>
         <div class="container">
           <div class="header">
+            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto; margin-bottom: 10px; display: inline-block;" />
             <h1>KELAS</h1>
           </div>
           <div class="content">

@@ -1441,7 +1441,7 @@ const getLearningRecommendations = async (req, res) => {
       { $unwind: { path: "$topikDetails", preserveNullAndEmptyArrays: true } },
       { $lookup: { from: "moduls", localField: "topikDetails.modulId", foreignField: "_id", as: "modulDetails" } },
       { $unwind: { path: "$modulDetails", preserveNullAndEmptyArrays: true } },
-        { $project: { _id: 0, topicId: "$topicDetails._id", topicTitle: "$topikDetails.title", topicSlug: "$topikDetails.slug", modulSlug: "$modulDetails.slug", score: { $round: ["$latestScore", 2] } } }
+        { $project: { _id: 0, topicId: "$topikDetails._id", topicTitle: "$topikDetails.title", topicSlug: "$topikDetails.slug", modulSlug: "$modulDetails.slug", score: { $round: ["$latestScore", 2] } } }
     ]);
 
     let deepenTopic = null;
