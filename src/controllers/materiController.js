@@ -1,7 +1,8 @@
 import Materi from "../models/Materi.js";
 import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "../utils/sanitize.js";
+
 
 // Helper function to convert YouTube watch URL to embed URL
 const getEmbedUrl = (url) => {
