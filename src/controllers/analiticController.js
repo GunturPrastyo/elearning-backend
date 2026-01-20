@@ -13,9 +13,10 @@ export const getAdminAnalytics = async (req, res) => {
     // --- OPTIMISASI: Polling Ringan untuk User Online ---
     // Jika ada query ?type=online-users, hanya kembalikan jumlah user online
     if (req.query.type === 'online-users') {
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        // Cek aktivitas dalam 2 menit terakhir (lebih real-time)
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
         const onlineUsers = await User.countDocuments({ 
-          lastActiveAt: { $gte: tenMinutesAgo }, 
+          lastActiveAt: { $gte: twoMinutesAgo }, 
           role: { $ne: 'admin' } 
         });
         return res.status(200).json({ onlineUsers });
@@ -55,11 +56,11 @@ export const getAdminAnalytics = async (req, res) => {
     const activeUsersList = await Result.distinct('userId', { createdAt: { $gte: sevenDaysAgo } });
     const activeUsers = activeUsersList.length;
 
-    // --- 4.6 User Online (Aktivitas 10 Menit Terakhir) ---
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    // Hitung user yang lastActiveAt-nya dalam 10 menit terakhir
+    // --- 4.6 User Online (Aktivitas 2 Menit Terakhir) ---
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    // Hitung user yang lastActiveAt-nya dalam 2 menit terakhir
     const onlineUsers = await User.countDocuments({ 
-      lastActiveAt: { $gte: tenMinutesAgo }, 
+      lastActiveAt: { $gte: twoMinutesAgo }, 
       role: { $ne: 'admin' } // Admin tidak dihitung
     });
 

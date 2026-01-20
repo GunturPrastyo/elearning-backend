@@ -22,13 +22,23 @@ const createResult = async (req, res) => {
     const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
 
-    // --- LOGIKA BARU: Heartbeat untuk User Online ---
-    // Menerima ping dari frontend untuk menandakan user sedang aktif
+    // --- LOGIKA BARU: Session Tracking (Heartbeat & Offline) ---
+    
+    // 1. User Sedang Aktif (Heartbeat)
     if (testType === 'heartbeat') {
-      // Update field lastActiveAt pada User, bukan membuat Result baru
-      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date() });
+      // Ambil IP User
+      const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+      
+      // Update waktu aktif dan IP
+      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(), lastIp: ip });
+      return res.status(200).json({ message: "Heartbeat recorded" });
+    }
 
-      return res.status(200).json({ message: "Activity recorded" });
+    // 2. User Keluar/Tutup Tab (Offline)
+    if (testType === 'offline') {
+      // Reset lastActiveAt ke masa lalu (Epoch) agar langsung hilang dari hitungan online
+      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(0) });
+      return res.status(200).json({ message: "User marked offline" });
     }
 
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
