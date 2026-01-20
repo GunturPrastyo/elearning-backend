@@ -22,6 +22,21 @@ const createResult = async (req, res) => {
     const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
 
+    // --- LOGIKA BARU: Heartbeat untuk User Online ---
+    // Menerima ping dari frontend untuk menandakan user sedang aktif
+    if (testType === 'heartbeat') {
+      await new Result({
+        userId,
+        testType,
+        score: 0,
+        correct: 0,
+        total: 0,
+        timeTaken: 0,
+        scoreDetails: { accuracy: 0, time: 0, stability: 0, focus: 0 }
+      }).save();
+      return res.status(200).json({ message: "Activity recorded" });
+    }
+
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
