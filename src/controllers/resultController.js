@@ -29,6 +29,9 @@ const createResult = async (req, res) => {
       // Ambil IP User
       const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
       
+      // DEBUG: Cek apakah heartbeat masuk
+      console.log(`[Heartbeat] User ${userId} aktif. IP: ${ip}`);
+
       // Update waktu aktif dan IP
       await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(), lastIp: ip });
       return res.status(200).json({ message: "Heartbeat recorded" });

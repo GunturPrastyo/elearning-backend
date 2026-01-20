@@ -17,7 +17,6 @@ export const getAdminAnalytics = async (req, res) => {
         const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
         const onlineUsers = await User.countDocuments({ 
           lastActiveAt: { $gte: twoMinutesAgo }, 
-          role: { $ne: 'admin' } 
         });
         return res.status(200).json({ onlineUsers });
     }
@@ -61,7 +60,6 @@ export const getAdminAnalytics = async (req, res) => {
     // Hitung user yang lastActiveAt-nya dalam 2 menit terakhir
     const onlineUsers = await User.countDocuments({ 
       lastActiveAt: { $gte: twoMinutesAgo }, 
-      role: { $ne: 'admin' } // Admin tidak dihitung
     });
 
     // --- 5. Topik Paling Sulit (Skor Rata-rata Terendah) ---
