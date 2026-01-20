@@ -38,6 +38,17 @@ export const getAdminAnalytics = async (req, res) => {
     // --- 4. Total Pengguna Terdaftar ---
     const totalUsers = await User.countDocuments();
 
+    // --- 4.5 Siswa Aktif (7 Hari Terakhir) ---
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const activeUsersList = await Result.distinct('userId', { createdAt: { $gte: sevenDaysAgo } });
+    const activeUsers = activeUsersList.length;
+
+    // --- 4.6 User Online (Aktivitas 10 Menit Terakhir) ---
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const onlineUserIds = await Result.distinct('userId', { createdAt: { $gte: tenMinutesAgo } });
+    const onlineUsers = await User.countDocuments({ _id: { $in: onlineUserIds }, role: { $ne: 'admin' } });
+
     // --- 5. Topik Paling Sulit (Skor Rata-rata Terendah) ---
     const hardestTopicResult = await Result.aggregate([
       { $match: { testType: "post-test-topik" } },
@@ -385,6 +396,8 @@ export const getAdminAnalytics = async (req, res) => {
       averageProgress,
       overallAverageScore,
       totalUsers,
+      activeUsers,
+      onlineUsers,
       weakestTopicOverall,
       moduleLearningSpeed, // Tambahkan data baru ke respons
       moduleScoreDistribution,
