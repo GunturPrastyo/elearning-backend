@@ -554,9 +554,21 @@ export const resetPassword = async (req, res) => {
 };
 
 // ========================= LOGOUT =========================
-export const logoutUser = (req, res) => {
-  // Dengan Bearer Token, logout ditangani oleh client dengan menghapus token.
-  res.status(200).json({ message: "Logout berhasil" });
+export const logoutUser = async (req, res) => {
+  try {
+    // Pastikan kita mendapatkan ID user, baik dari _id (mongoose doc) atau id (jwt payload)
+    const userId = req.user?._id || req.user?.id;
+
+    if (userId) {
+      // Reset lastActiveAt ke masa lalu (Epoch) agar user langsung dianggap offline
+      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(0) });
+      console.log(`[Logout] User ${userId} status set to offline.`);
+    }
+    res.status(200).json({ message: "Logout berhasil" });
+  } catch (error) {
+    console.error("Logout Error:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
 };
 
 // ========================= COMPLETE TOPIK =========================

@@ -25,15 +25,9 @@ const createResult = async (req, res) => {
     // --- LOGIKA BARU: Heartbeat untuk User Online ---
     // Menerima ping dari frontend untuk menandakan user sedang aktif
     if (testType === 'heartbeat') {
-      await new Result({
-        userId,
-        testType,
-        score: 0,
-        correct: 0,
-        total: 0,
-        timeTaken: 0,
-        scoreDetails: { accuracy: 0, time: 0, stability: 0, focus: 0 }
-      }).save();
+      // Update field lastActiveAt pada User, bukan membuat Result baru
+      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date() });
+
       return res.status(200).json({ message: "Activity recorded" });
     }
 

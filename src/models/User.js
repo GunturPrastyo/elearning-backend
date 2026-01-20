@@ -35,6 +35,7 @@ const userSchema = new mongoose.Schema({
   }],
   resetPasswordToken: String,
   resetPasswordExpire: Date,
+  lastActiveAt: Date, // Field baru untuk melacak kapan terakhir user online
 
 }, { timestamps: true });
 

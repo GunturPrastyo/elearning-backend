@@ -10,6 +10,17 @@ import Modul from "../models/Modul.js";
  */
 export const getAdminAnalytics = async (req, res) => {
   try {
+    // --- OPTIMISASI: Polling Ringan untuk User Online ---
+    // Jika ada query ?type=online-users, hanya kembalikan jumlah user online
+    if (req.query.type === 'online-users') {
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const onlineUsers = await User.countDocuments({ 
+          lastActiveAt: { $gte: tenMinutesAgo }, 
+          role: { $ne: 'admin' } 
+        });
+        return res.status(200).json({ onlineUsers });
+    }
+
     // --- 1. Total Jam Belajar (Semua User) ---
     const totalStudyTimeResult = await Result.aggregate([
       { $match: { testType: 'study-session' } },
@@ -46,8 +57,11 @@ export const getAdminAnalytics = async (req, res) => {
 
     // --- 4.6 User Online (Aktivitas 10 Menit Terakhir) ---
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const onlineUserIds = await Result.distinct('userId', { createdAt: { $gte: tenMinutesAgo } });
-    const onlineUsers = await User.countDocuments({ _id: { $in: onlineUserIds }, role: { $ne: 'admin' } });
+    // Hitung user yang lastActiveAt-nya dalam 10 menit terakhir
+    const onlineUsers = await User.countDocuments({ 
+      lastActiveAt: { $gte: tenMinutesAgo }, 
+      role: { $ne: 'admin' } // Admin tidak dihitung
+    });
 
     // --- 5. Topik Paling Sulit (Skor Rata-rata Terendah) ---
     const hardestTopicResult = await Result.aggregate([
