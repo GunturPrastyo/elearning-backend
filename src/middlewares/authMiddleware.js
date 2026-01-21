@@ -5,8 +5,8 @@ export const protect = async (req, res, next) => {
   let token;
 
   try {
-    // 1. Baca header kustom 'X-Authorization'
-    const authHeader = req.headers['x-authorization'];
+    // 1. Baca header Authorization (standar) atau X-Authorization (fallback)
+    const authHeader = req.headers.authorization || req.headers['x-authorization'];
 
     if (authHeader && authHeader.startsWith('Bearer')) {
       // 2. Ambil token dari "Bearer <token>"
