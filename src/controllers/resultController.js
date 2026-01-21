@@ -19,56 +19,25 @@ import fs from 'fs';
  */
 const createResult = async (req, res) => {
   try {
-    const { testType, score, correct, total, timeTaken, modulId, totalDuration, scoreDetails: providedScoreDetails } = req.body;
+    const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
-
-    // --- LOGIKA BARU: Session Tracking (Heartbeat & Offline) ---
-    
-    // 1. User Sedang Aktif (Heartbeat)
-    if (testType === 'heartbeat') {
-      // Ambil IP User
-      const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-      
-      // DEBUG: Cek apakah heartbeat masuk
-      console.log(`[Heartbeat] User ${userId} aktif. IP: ${ip}`);
-
-      // Update waktu aktif dan IP
-      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(), lastIp: ip });
-      return res.status(200).json({ message: "Heartbeat recorded" });
-    }
-
-    // 2. User Keluar/Tutup Tab (Offline)
-    if (testType === 'offline') {
-      // Reset lastActiveAt ke masa lalu (Epoch) agar langsung hilang dari hitungan online
-      await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(0) });
-      return res.status(200).json({ message: "User marked offline" });
-    }
-
-    // VALIDASI TAMBAHAN: Pastikan modulId ada untuk post-test-modul
-    if (testType === 'post-test-modul' && !modulId) {
-        return res.status(400).json({ message: "Modul ID diperlukan untuk menyimpan hasil post-test modul." });
-    }
 
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
 
-    let scoreDetails = providedScoreDetails;
+    // Kalkulasi rincian skor, sama seperti di submitTest
+    const accuracyScore = score; // score di pre-test adalah accuracy
+    const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
+    const timeScore = timeEfficiency * 100;
 
-    if (!scoreDetails) {
-      // Kalkulasi rincian skor, sama seperti di submitTest
-      const accuracyScore = score; // score di pre-test adalah accuracy
-      const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
-      const timeScore = timeEfficiency * 100;
-
-      // Untuk pre-test, asumsikan stabilitas dan fokus 100% karena tidak dilacak
-      scoreDetails = {
-        accuracy: parseFloat(accuracyScore.toFixed(2)),
-        time: parseFloat(timeScore.toFixed(2)),
-        stability: 100,
-        focus: 100,
-      };
-    }
+    // Untuk pre-test, asumsikan stabilitas dan fokus 100% karena tidak dilacak
+    const scoreDetails = {
+      accuracy: parseFloat(accuracyScore.toFixed(2)),
+      time: parseFloat(timeScore.toFixed(2)),
+      stability: 100,
+      focus: 100,
+    };
 
     const newResult = new Result({
       userId,
@@ -78,7 +47,7 @@ const createResult = async (req, res) => {
       total,
       scoreDetails, // <-- Tambahkan rincian skor di sini
       timeTaken,
-      ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }), // Pastikan cast ke ObjectId
+      ...(modulId && { modulId }), // Hanya tambahkan modulId jika ada
     });
 
     await newResult.save();
@@ -717,17 +686,18 @@ const saveProgress = async (req, res) => {
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, currentIndex } = req.body;
 
-    if (!testType) {
-      return res.status(400).json({ message: "Tipe tes diperlukan." });
+    if (!testType || !topikId) {
+      return res.status(400).json({ message: "Data progress tidak lengkap." });
     }
 
-    const query = { userId, testType };
-    if (modulId) query.modulId = new mongoose.Types.ObjectId(modulId);
-    if (topikId) query.topikId = new mongoose.Types.ObjectId(topikId);
-
     // Use findOneAndUpdate with upsert to either create a new progress document or update an existing one.
-    const progress = await Result.findOneAndUpdate(
-      query,
+    const progress = await Result.findOneAndUpdate( // The testType here should be specific to progress tracking
+      {
+        userId,
+        modulId: new mongoose.Types.ObjectId(modulId),
+        topikId: new mongoose.Types.ObjectId(topikId),
+        testType: "post-test-topik-progress", // Use a distinct testType for progress
+      },
       {
         $set: {
           // Simpan ke field `progressAnswers` yang baru
@@ -736,9 +706,6 @@ const saveProgress = async (req, res) => {
             selectedOption,
           })),
           currentIndex: currentIndex || 0,
-          ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }),
-          ...(topikId && { topikId: new mongoose.Types.ObjectId(topikId) }),
-          testType
         },
       },
       {
@@ -765,15 +732,17 @@ const getProgress = async (req, res) => {
     const userId = req.user._id;
     const { modulId, topikId, testType } = req.query;
 
-    if (!testType) {
-      return res.status(400).json({ message: "Parameter testType diperlukan." });
+    if (!testType || !topikId) {
+      return res.status(400).json({ message: "Parameter testType dan topikId diperlukan." });
     }
 
-    const query = { userId, testType };
-    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) query.modulId = new mongoose.Types.ObjectId(modulId);
-    if (topikId && mongoose.Types.ObjectId.isValid(topikId)) query.topikId = new mongoose.Types.ObjectId(topikId);
-
-    const progress = await Result.findOne(query);
+    // Pastikan testType di query sesuai dengan yang disimpan di DB
+    const progress = await Result.findOne({
+      userId,
+      modulId: new mongoose.Types.ObjectId(modulId),
+      topikId: new mongoose.Types.ObjectId(topikId),
+      testType: testType, // FIX: Gunakan testType langsung dari query, jangan tambahkan "-progress" lagi
+    });
 
     if (!progress) {
       // Ini bukan error, hanya berarti tidak ada progress. Kirim 404 agar frontend tahu.
@@ -798,15 +767,11 @@ const deleteProgress = async (req, res) => {
     // Ambil parameter dari query string, bukan dari body
     const { modulId, topikId, testType } = req.query;
 
-    if (!testType) {
-      return res.status(400).json({ message: "Parameter testType diperlukan." });
+    if (!testType || !topikId || !modulId) {
+      return res.status(400).json({ message: "Parameter modulId, topikId, dan testType diperlukan untuk menghapus progress." });
     }
 
-    const query = { userId, testType };
-    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) query.modulId = new mongoose.Types.ObjectId(modulId);
-    if (topikId && mongoose.Types.ObjectId.isValid(topikId)) query.topikId = new mongoose.Types.ObjectId(topikId);
-
-    await Result.deleteOne(query);
+    await Result.deleteOne({ userId, modulId, topikId, testType });
     res.status(200).json({ message: "Progress berhasil dihapus." });
   } catch (error) {
     console.error("Gagal menghapus progress:", error);
@@ -877,10 +842,7 @@ const getLatestResultByType = async (req, res) => {
     }
 
     const query = { userId, testType };
-    // Explicitly set modulId for post-test-modul to ensure filtering
-    if (testType === 'post-test-modul') {
-        query.modulId = new mongoose.Types.ObjectId(modulId);
-    } else if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
+    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
       query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
