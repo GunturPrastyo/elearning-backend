@@ -101,22 +101,34 @@ const submitTest = async (req, res) => {
       return res.status(400).json({ message: "Data jawaban tidak lengkap." });
     }
     
+    // Validasi ID Wajib untuk mencegah data tercampur
+    if (testType === "post-test-topik" && !topikId) {
+        return res.status(400).json({ message: "Topik ID diperlukan untuk post-test topik." });
+    }
+    if (testType === "post-test-modul" && !modulId) {
+        return res.status(400).json({ message: "Modul ID diperlukan untuk post-test modul." });
+    }
+
     const questionIds = Object.keys(answers);
     
-    // Kueri soal berdasarkan tipe tes
-    const query = { _id: { $in: questionIds }, testType };
+    // PERBAIKAN: Filter soal berdasarkan topikId/modulId untuk mencegah soal dari topik lain terhitung
+    const query = { _id: { $in: questionIds } };
     if (testType === 'post-test-topik' && topikId) {
-      query.topikId = new mongoose.Types.ObjectId(topikId);
+        query.topikId = new mongoose.Types.ObjectId(topikId);
     }
     if (testType === 'post-test-modul' && modulId) {
-      query.modulId = new mongoose.Types.ObjectId(modulId);
+        query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
-    // Perbaikan: Kueri soal tidak perlu menyertakan testType karena ID sudah unik
-    const questions = await Question.find({ _id: { $in: questionIds } }).select("+answer +durationPerQuestion");
+    // Ambil soal beserta field penting untuk analisis
+    const questions = await Question.find(query).select("+answer +durationPerQuestion +subMateriId +topikId");
 
     if (questions.length !== questionIds.length) {
-      return res.status(404).json({ message: "Beberapa soal tidak ditemukan." });
+      // Jangan return 404 jika jumlah tidak sama, karena mungkin ada jawaban sampah dari topik lain yang kita filter out.
+      // Cukup peringatkan atau lanjut dengan soal yang valid saja.
+      if (questions.length === 0) {
+          return res.status(404).json({ message: "Soal tidak ditemukan untuk topik/modul ini." });
+      }
     }
     let correctAnswers = 0;
     questions.forEach((q) => {
@@ -301,7 +313,7 @@ const submitTest = async (req, res) => {
     let avgScoreMenengah = 0;
 
     // Logika untuk mengambil nilai terbaik pada post-test topik
-    if (testType === "post-test-topik" && topikId) {
+    if (testType === "post-test-topik") {
       // 1. Cari hasil yang sudah ada
       const existingResult = await Result.findOne({ userId, topikId, testType: "post-test-topik" });
 
@@ -526,12 +538,13 @@ const submitTest = async (req, res) => {
         { new: true, upsert: true, setDefaultsOnInsert: true, set: { featureScoresByModule: featureScoresByModule } }
       );
       bestScore = finalScore;
-    } else if (testType === "post-test-modul" && modulId) {
-      const existingResult = await Result.findOne({ userId, modulId, testType });
+    } else if (testType === "post-test-modul") {
+      const objectModulId = new mongoose.Types.ObjectId(modulId);
+      const existingResult = await Result.findOne({ userId, modulId: objectModulId, testType });
 
       if (!existingResult || finalScore > existingResult.score) {
         result = await Result.findOneAndUpdate(
-          { userId, modulId, testType },
+          { userId, modulId: objectModulId, testType },
           {
             userId, testType, score: finalScore,
             correct: correctAnswers,
@@ -541,6 +554,7 @@ const submitTest = async (req, res) => {
             answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], topikId: q.topikId })),
             timeTaken,
             timestamp: new Date(),
+            modulId: objectModulId,
           },
           { new: true, upsert: true, setDefaultsOnInsert: true }
         );
@@ -601,8 +615,8 @@ const submitTest = async (req, res) => {
         // weakSubTopics hanya relevan untuk post-test-topik, jadi biarkan kosong untuk tipe lain.
         weakSubTopics: [],
         timeTaken,
-        ...(modulId && { modulId }),
-        ...(topikId && { topikId }),
+        ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }),
+        ...(topikId && { topikId: new mongoose.Types.ObjectId(topikId) }),
         timestamp: new Date(),
       }).save();
       bestScore = finalScore;
@@ -632,6 +646,8 @@ const submitTest = async (req, res) => {
         weakTopics, // Selalu kirim analisis topik lemah dari pengerjaan saat ini
         weakSubTopics, // Feedback sub-topik lemah dari pengerjaan saat ini.
         score: finalScore, // Selalu kirim skor pengerjaan SAAT INI untuk ditampilkan di modal.
+        correct: correctAnswers, // PERBAIKAN: Paksa kirim jumlah benar dari percobaan SAAT INI
+        total: totalQuestions,   // PERBAIKAN: Paksa kirim total soal dari percobaan SAAT INI
         bestScore: bestScore, // Kirim juga skor terbaik untuk perbandingan/update di frontend.
         learningPath: learningPathResult, // Kirim hasil penentuan level
         scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
@@ -842,7 +858,7 @@ const getLatestResultByType = async (req, res) => {
     }
 
     const query = { userId, testType };
-    if (modulId) {
+    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
       query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
