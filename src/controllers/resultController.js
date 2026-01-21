@@ -518,24 +518,29 @@ const submitTest = async (req, res) => {
       bestScore = finalScore;
     } else if (testType === "post-test-modul") {
       const objectModulId = new mongoose.Types.ObjectId(modulId);
+      const existingResult = await Result.findOne({ userId, modulId: objectModulId, testType });
 
-      // FIX: Langsung simpan hasil ke DB berdasarkan modulId tanpa pengecekan skor lama
-      result = await Result.findOneAndUpdate(
-        { userId, modulId: objectModulId, testType },
-        {
-          userId, testType, score: finalScore,
-          correct: correctAnswers,
-          total: totalQuestions,
-          scoreDetails,
-          weakTopics, // Simpan analisis topik lemah
-          answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], topikId: q.topikId })),
-          timeTaken,
-          timestamp: new Date(),
-          modulId: objectModulId,
-        },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
-      );
-      bestScore = finalScore;
+      if (!existingResult || finalScore > existingResult.score) {
+        result = await Result.findOneAndUpdate(
+          { userId, modulId: objectModulId, testType },
+          {
+            userId, testType, score: finalScore,
+            correct: correctAnswers,
+            total: totalQuestions,
+            scoreDetails,
+            weakTopics, // Simpan analisis topik lemah
+            answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], topikId: q.topikId })),
+            timeTaken,
+            timestamp: new Date(),
+            modulId: objectModulId,
+          },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+        bestScore = finalScore;
+      } else {
+        result = existingResult;
+        bestScore = existingResult.score;
+      }
 
       // --- START: Logika Pembaruan Kompetensi setelah Post-Test Modul ---
       console.log(`[DEBUG] Memulai update kompetensi untuk user: ${userId} dari modul: ${modulId}`);
