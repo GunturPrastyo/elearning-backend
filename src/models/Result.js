@@ -52,8 +52,6 @@ const resultSchema = new mongoose.Schema(
         "post-test-topik",
         "study-session",
         "post-test-topik-progress", // Tambahkan tipe untuk progress
-        "heartbeat", // Tambahkan tipe untuk status online
-        "offline", // Tambahkan tipe untuk sinyal keluar/offline
       ],
     },
     score: {
