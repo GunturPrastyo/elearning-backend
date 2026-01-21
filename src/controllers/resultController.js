@@ -22,6 +22,11 @@ const createResult = async (req, res) => {
     const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
     const userId = req.user._id;
 
+    // Handle heartbeat/offline signals
+    if (testType === 'heartbeat' || testType === 'offline') {
+      return res.status(200).json({ message: "Signal received." });
+    }
+
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
