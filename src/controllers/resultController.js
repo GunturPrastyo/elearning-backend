@@ -19,7 +19,7 @@ import fs from 'fs';
  */
 const createResult = async (req, res) => {
   try {
-    const { testType, score, correct, total, timeTaken, modulId, totalDuration } = req.body;
+    const { testType, score, correct, total, timeTaken, modulId, totalDuration, scoreDetails: providedScoreDetails } = req.body;
     const userId = req.user._id;
 
     // --- LOGIKA BARU: Session Tracking (Heartbeat & Offline) ---
@@ -48,18 +48,22 @@ const createResult = async (req, res) => {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
 
-    // Kalkulasi rincian skor, sama seperti di submitTest
-    const accuracyScore = score; // score di pre-test adalah accuracy
-    const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
-    const timeScore = timeEfficiency * 100;
+    let scoreDetails = providedScoreDetails;
 
-    // Untuk pre-test, asumsikan stabilitas dan fokus 100% karena tidak dilacak
-    const scoreDetails = {
-      accuracy: parseFloat(accuracyScore.toFixed(2)),
-      time: parseFloat(timeScore.toFixed(2)),
-      stability: 100,
-      focus: 100,
-    };
+    if (!scoreDetails) {
+      // Kalkulasi rincian skor, sama seperti di submitTest
+      const accuracyScore = score; // score di pre-test adalah accuracy
+      const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
+      const timeScore = timeEfficiency * 100;
+
+      // Untuk pre-test, asumsikan stabilitas dan fokus 100% karena tidak dilacak
+      scoreDetails = {
+        accuracy: parseFloat(accuracyScore.toFixed(2)),
+        time: parseFloat(timeScore.toFixed(2)),
+        stability: 100,
+        focus: 100,
+      };
+    }
 
     const newResult = new Result({
       userId,
