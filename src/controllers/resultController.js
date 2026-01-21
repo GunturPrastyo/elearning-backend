@@ -44,6 +44,11 @@ const createResult = async (req, res) => {
       return res.status(200).json({ message: "User marked offline" });
     }
 
+    // VALIDASI TAMBAHAN: Pastikan modulId ada untuk post-test-modul
+    if (testType === 'post-test-modul' && !modulId) {
+        return res.status(400).json({ message: "Modul ID diperlukan untuk menyimpan hasil post-test modul." });
+    }
+
     if (!testType || score == null || correct == null || total == null || timeTaken == null) {
       return res.status(400).json({ message: "Data hasil tes tidak lengkap." });
     }
@@ -73,7 +78,7 @@ const createResult = async (req, res) => {
       total,
       scoreDetails, // <-- Tambahkan rincian skor di sini
       timeTaken,
-      ...(modulId && { modulId }), // Hanya tambahkan modulId jika ada
+      ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }), // Pastikan cast ke ObjectId
     });
 
     await newResult.save();
@@ -868,7 +873,10 @@ const getLatestResultByType = async (req, res) => {
     }
 
     const query = { userId, testType };
-    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
+    // Explicitly set modulId for post-test-modul to ensure filtering
+    if (testType === 'post-test-modul') {
+        query.modulId = new mongoose.Types.ObjectId(modulId);
+    } else if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
       query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
