@@ -835,15 +835,18 @@ const getLatestResultByType = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType } = req.params;
+    const { modulId } = req.query;
 
     if (!testType) {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
     }
 
-    const latestResult = await Result.findOne({
-      userId,
-      testType,
-    })
+    const query = { userId, testType };
+    if (modulId) {
+      query.modulId = new mongoose.Types.ObjectId(modulId);
+    }
+
+    const latestResult = await Result.findOne(query)
       .sort({ createdAt: -1 }) // Urutkan berdasarkan yang terbaru
       .lean(); // Gunakan .lean() untuk performa lebih baik jika tidak butuh method Mongoose
 
