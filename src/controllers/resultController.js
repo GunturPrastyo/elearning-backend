@@ -102,11 +102,11 @@ const submitTest = async (req, res) => {
     }
     
     // Validasi ID Wajib untuk mencegah data tercampur
-    if (testType === "post-test-topik" && !topikId) {
-        return res.status(400).json({ message: "Topik ID diperlukan untuk post-test topik." });
+    if (testType === "post-test-topik" && (!topikId || !mongoose.Types.ObjectId.isValid(topikId))) {
+        return res.status(400).json({ message: "Topik ID valid diperlukan untuk post-test topik." });
     }
-    if (testType === "post-test-modul" && !modulId) {
-        return res.status(400).json({ message: "Modul ID diperlukan untuk post-test modul." });
+    if (testType === "post-test-modul" && (!modulId || !mongoose.Types.ObjectId.isValid(modulId))) {
+        return res.status(400).json({ message: "Modul ID valid diperlukan untuk post-test modul." });
     }
 
     const questionIds = Object.keys(answers);
@@ -855,6 +855,12 @@ const getLatestResultByType = async (req, res) => {
 
     if (!testType) {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
+    }
+
+    // PERBAIKAN: Wajibkan modulId untuk post-test-modul agar tidak mengambil data modul lain
+    if (testType === 'post-test-modul' && (!modulId || !mongoose.Types.ObjectId.isValid(modulId))) {
+        // Jika modulId tidak valid/ada, kembalikan null (jangan ambil data sembarangan)
+        return res.status(200).json(null);
     }
 
     const query = { userId, testType };
