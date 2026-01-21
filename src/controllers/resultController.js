@@ -524,15 +524,17 @@ const submitTest = async (req, res) => {
         result = await Result.findOneAndUpdate(
           { userId, modulId: objectModulId, testType },
           {
-            userId, testType, score: finalScore,
-            correct: correctAnswers,
-            total: totalQuestions,
-            scoreDetails,
-            weakTopics, // Simpan analisis topik lemah
-            answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], topikId: q.topikId })),
-            timeTaken,
-            timestamp: new Date(),
-            modulId: objectModulId,
+            $set: {
+              userId, testType, score: finalScore,
+              correct: correctAnswers,
+              total: totalQuestions,
+              scoreDetails,
+              weakTopics,
+              answers: questions.map(q => ({ questionId: q._id, selectedOption: answers[q._id.toString()], topikId: q.topikId })),
+              timeTaken,
+              timestamp: new Date(),
+              modulId: objectModulId,
+            }
           },
           { new: true, upsert: true, setDefaultsOnInsert: true }
         );
