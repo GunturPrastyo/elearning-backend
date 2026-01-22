@@ -686,18 +686,18 @@ const saveProgress = async (req, res) => {
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, currentIndex } = req.body;
 
-    if (!testType || !topikId) {
-      return res.status(400).json({ message: "Data progress tidak lengkap." });
+    // PERBAIKAN: Validasi lebih fleksibel. Izinkan jika ada modulId ATAU topikId.
+    if (!testType || (!topikId && !modulId)) {
+      return res.status(400).json({ message: "Data progress tidak lengkap (perlu testType dan salah satu dari topikId/modulId)." });
     }
+
+    const query = { userId, testType };
+    if (modulId) query.modulId = new mongoose.Types.ObjectId(modulId);
+    if (topikId) query.topikId = new mongoose.Types.ObjectId(topikId);
 
     // Use findOneAndUpdate with upsert to either create a new progress document or update an existing one.
     const progress = await Result.findOneAndUpdate( // The testType here should be specific to progress tracking
-      {
-        userId,
-        modulId: new mongoose.Types.ObjectId(modulId),
-        topikId: new mongoose.Types.ObjectId(topikId),
-        testType: "post-test-topik-progress", // Use a distinct testType for progress
-      },
+      query,
       {
         $set: {
           // Simpan ke field `progressAnswers` yang baru
@@ -706,6 +706,9 @@ const saveProgress = async (req, res) => {
             selectedOption,
           })),
           currentIndex: currentIndex || 0,
+          // Pastikan field ID tersimpan jika dokumen baru dibuat
+          ...(modulId && { modulId: new mongoose.Types.ObjectId(modulId) }),
+          ...(topikId && { topikId: new mongoose.Types.ObjectId(topikId) }),
         },
       },
       {
@@ -732,17 +735,17 @@ const getProgress = async (req, res) => {
     const userId = req.user._id;
     const { modulId, topikId, testType } = req.query;
 
-    if (!testType || !topikId) {
-      return res.status(400).json({ message: "Parameter testType dan topikId diperlukan." });
+    // PERBAIKAN: Validasi lebih fleksibel. Izinkan jika ada modulId ATAU topikId.
+    if (!testType || (!topikId && !modulId)) {
+      return res.status(400).json({ message: "Parameter testType dan salah satu dari topikId/modulId diperlukan." });
     }
 
+    const query = { userId, testType };
+    if (modulId) query.modulId = new mongoose.Types.ObjectId(modulId);
+    if (topikId) query.topikId = new mongoose.Types.ObjectId(topikId);
+
     // Pastikan testType di query sesuai dengan yang disimpan di DB
-    const progress = await Result.findOne({
-      userId,
-      modulId: new mongoose.Types.ObjectId(modulId),
-      topikId: new mongoose.Types.ObjectId(topikId),
-      testType: testType, // FIX: Gunakan testType langsung dari query, jangan tambahkan "-progress" lagi
-    });
+    const progress = await Result.findOne(query);
 
     if (!progress) {
       // Ini bukan error, hanya berarti tidak ada progress. Kirim 404 agar frontend tahu.
@@ -767,11 +770,16 @@ const deleteProgress = async (req, res) => {
     // Ambil parameter dari query string, bukan dari body
     const { modulId, topikId, testType } = req.query;
 
-    if (!testType || !topikId || !modulId) {
-      return res.status(400).json({ message: "Parameter modulId, topikId, dan testType diperlukan untuk menghapus progress." });
+    // PERBAIKAN: Validasi lebih fleksibel.
+    if (!testType || (!topikId && !modulId)) {
+      return res.status(400).json({ message: "Parameter testType dan salah satu dari topikId/modulId diperlukan untuk menghapus progress." });
     }
 
-    await Result.deleteOne({ userId, modulId, topikId, testType });
+    const query = { userId, testType };
+    if (modulId) query.modulId = modulId;
+    if (topikId) query.topikId = topikId;
+
+    await Result.deleteOne(query);
     res.status(200).json({ message: "Progress berhasil dihapus." });
   } catch (error) {
     console.error("Gagal menghapus progress:", error);
