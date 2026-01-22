@@ -868,15 +868,20 @@ const deleteResultByType = async (req, res) => {
   try {
     const userId = req.user._id;
     const { testType } = req.params;
+    const { modulId } = req.query; // Ambil modulId dari query string
 
     if (!testType) {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
     }
 
-    const result = await Result.deleteOne({
-      userId,
-      testType,
-    });
+    const query = { userId, testType };
+
+    // FIX: Tambahkan filter modulId agar tidak menghapus hasil modul lain
+    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
+      query.modulId = new mongoose.Types.ObjectId(modulId);
+    }
+
+    const result = await Result.deleteOne(query);
 
     if (result.deletedCount === 0) {
       // Tidak apa-apa jika tidak ada yang dihapus, mungkin memang belum ada hasilnya.
