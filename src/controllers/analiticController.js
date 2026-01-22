@@ -16,7 +16,8 @@ export const getAdminAnalytics = async (req, res) => {
         // Cek aktivitas dalam 2 menit terakhir (lebih real-time)
         const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
         const onlineUsers = await User.countDocuments({ 
-          lastActiveAt: { $gte: twoMinutesAgo }, 
+          lastActiveAt: { $gte: twoMinutesAgo },
+          role: 'user' // FIX: Hanya hitung role 'user', admin tidak dihitung
         });
         return res.status(200).json({ onlineUsers });
     }
@@ -52,14 +53,18 @@ export const getAdminAnalytics = async (req, res) => {
     // --- 4.5 Siswa Aktif (7 Hari Terakhir) ---
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const activeUsersList = await Result.distinct('userId', { createdAt: { $gte: sevenDaysAgo } });
-    const activeUsers = activeUsersList.length;
+    // Hitung user yang lastActiveAt-nya dalam 7 hari terakhir (User Online 7 Hari)
+    const activeUsers = await User.countDocuments({ 
+      lastActiveAt: { $gte: sevenDaysAgo },
+      role: 'user' // FIX: Hanya hitung role 'user'
+    });
 
     // --- 4.6 User Online (Aktivitas 2 Menit Terakhir) ---
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
     // Hitung user yang lastActiveAt-nya dalam 2 menit terakhir
     const onlineUsers = await User.countDocuments({ 
-      lastActiveAt: { $gte: twoMinutesAgo }, 
+      lastActiveAt: { $gte: twoMinutesAgo },
+      role: 'user' // FIX: Hanya hitung role 'user'
     });
 
     // --- 5. Topik Paling Sulit (Skor Rata-rata Terendah) ---

@@ -17,6 +17,13 @@ export const protect = async (req, res, next) => {
 
       // 4. Dapatkan user dan lampirkan ke request
       req.user = await User.findById(decoded.id).select("-password");
+
+      // --- UPDATE STATUS ONLINE ---
+      // Perbarui lastActiveAt setiap kali user melakukan request yang terautentikasi
+      if (req.user) {
+        await User.findByIdAndUpdate(decoded.id, { lastActiveAt: new Date() });
+      }
+
       next();
     } else {
       return res.status(401).json({ message: "Tidak ada token atau format header salah, akses ditolak" });
