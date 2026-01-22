@@ -735,12 +735,21 @@ const getProgress = async (req, res) => {
     const userId = req.user._id;
     const { modulId, topikId, testType } = req.query;
 
-    // DEBUG: Log untuk memastikan parameter diterima dengan benar
-    console.log(`[getProgress] userId:${userId} testType:${testType} modulId:${modulId} topikId:${topikId}`);
+    // DEBUG: Log detail request
+    console.log(`[getProgress] User:${userId} Type:${testType} Modul:${modulId} Topik:${topikId}`);
 
     if (!testType) {
         return res.status(400).json({ message: "Parameter testType diperlukan." });
     }
+
+    // Validasi format ObjectId sebelum digunakan
+    if (modulId && !mongoose.Types.ObjectId.isValid(modulId)) {
+        return res.status(400).json({ message: `Format modulId tidak valid: ${modulId}` });
+    }
+    if (topikId && !mongoose.Types.ObjectId.isValid(topikId)) {
+        return res.status(400).json({ message: `Format topikId tidak valid: ${topikId}` });
+    }
+
     if (!topikId && !modulId) {
         return res.status(400).json({ message: "Salah satu dari topikId atau modulId diperlukan." });
     }
@@ -845,7 +854,7 @@ const getLatestResultByType = async (req, res) => {
     const { modulId } = req.query;
 
     // DEBUG: Log untuk tracing request hasil
-    console.log(`[getLatestResultByType] userId:${userId} testType:${testType} modulId:${modulId}`);
+    console.log(`[getLatestResultByType] User:${userId} Type:${testType} Modul:${modulId}`);
 
     if (!testType) {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
@@ -856,7 +865,7 @@ const getLatestResultByType = async (req, res) => {
     // PERBAIKAN: Logika filter modulId yang lebih rapi dan aman
     if (modulId) {
         if (!mongoose.Types.ObjectId.isValid(modulId)) {
-            console.log(`[getLatestResultByType] Invalid modulId: ${modulId}`);
+            console.warn(`[getLatestResultByType] Invalid modulId received: ${modulId}`);
             return res.status(200).json(null);
         }
         query.modulId = new mongoose.Types.ObjectId(modulId);
@@ -868,6 +877,7 @@ const getLatestResultByType = async (req, res) => {
 
     const latestResult = await Result.findOne(query)
       .sort({ createdAt: -1 }) // Urutkan berdasarkan yang terbaru
+      .select('+weakTopics +scoreDetails') // Pastikan field penting terpilih
       .lean(); // Gunakan .lean() untuk performa lebih baik jika tidak butuh method Mongoose
 
     // Tidak masalah jika null, frontend akan menanganinya
