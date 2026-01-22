@@ -880,6 +880,12 @@ const getLatestResultByType = async (req, res) => {
       .select('+weakTopics +scoreDetails') // Pastikan field penting terpilih
       .lean(); // Gunakan .lean() untuk performa lebih baik jika tidak butuh method Mongoose
 
+    // SAFETY CHECK: Double check modulId match untuk mencegah data salah modul
+    if (latestResult && modulId && String(latestResult.modulId) !== String(modulId)) {
+        console.warn(`[getLatestResultByType] Mismatch detected! Req: ${modulId}, Found: ${latestResult.modulId}. Returning null.`);
+        return res.status(200).json(null);
+    }
+
     // Tidak masalah jika null, frontend akan menanganinya
     res.status(200).json(latestResult);
 
