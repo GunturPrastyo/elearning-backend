@@ -735,9 +735,14 @@ const getProgress = async (req, res) => {
     const userId = req.user._id;
     const { modulId, topikId, testType } = req.query;
 
-    // PERBAIKAN: Validasi lebih fleksibel. Izinkan jika ada modulId ATAU topikId.
-    if (!testType || (!topikId && !modulId)) {
-      return res.status(400).json({ message: "Parameter testType dan salah satu dari topikId/modulId diperlukan." });
+    // DEBUG: Log untuk memastikan parameter diterima dengan benar
+    console.log(`[getProgress] userId:${userId} testType:${testType} modulId:${modulId} topikId:${topikId}`);
+
+    if (!testType) {
+        return res.status(400).json({ message: "Parameter testType diperlukan." });
+    }
+    if (!topikId && !modulId) {
+        return res.status(400).json({ message: "Salah satu dari topikId atau modulId diperlukan." });
     }
 
     const query = { userId, testType };
@@ -839,19 +844,26 @@ const getLatestResultByType = async (req, res) => {
     const { testType } = req.params;
     const { modulId } = req.query;
 
+    // DEBUG: Log untuk tracing request hasil
+    console.log(`[getLatestResultByType] userId:${userId} testType:${testType} modulId:${modulId}`);
+
     if (!testType) {
       return res.status(400).json({ message: "Parameter testType diperlukan." });
     }
 
-    // PERBAIKAN: Wajibkan modulId untuk post-test-modul agar tidak mengambil data modul lain
-    if (testType === 'post-test-modul' && (!modulId || !mongoose.Types.ObjectId.isValid(modulId))) {
-        // Jika modulId tidak valid/ada, kembalikan null (jangan ambil data sembarangan)
-        return res.status(200).json(null);
-    }
-
     const query = { userId, testType };
-    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
-      query.modulId = new mongoose.Types.ObjectId(modulId);
+
+    // PERBAIKAN: Logika filter modulId yang lebih rapi dan aman
+    if (modulId) {
+        if (!mongoose.Types.ObjectId.isValid(modulId)) {
+            console.log(`[getLatestResultByType] Invalid modulId: ${modulId}`);
+            return res.status(200).json(null);
+        }
+        query.modulId = new mongoose.Types.ObjectId(modulId);
+    } else if (testType === 'post-test-modul') {
+        // Khusus post-test-modul, modulId wajib ada
+        console.log(`[getLatestResultByType] Missing modulId for post-test-modul`);
+        return res.status(200).json(null);
     }
 
     const latestResult = await Result.findOne(query)
