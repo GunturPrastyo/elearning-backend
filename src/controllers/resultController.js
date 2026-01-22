@@ -875,6 +875,9 @@ const getLatestResultByType = async (req, res) => {
         return res.status(200).json(null);
     }
 
+    // DEBUG: Cek query final sebelum dikirim ke MongoDB
+    console.log(`[getLatestResultByType] Executing Query:`, JSON.stringify(query));
+
     const latestResult = await Result.findOne(query)
       .sort({ createdAt: -1 }) // Urutkan berdasarkan yang terbaru
       .select('+weakTopics +scoreDetails') // Pastikan field penting terpilih
