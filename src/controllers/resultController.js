@@ -876,12 +876,16 @@ const deleteResultByType = async (req, res) => {
 
     const query = { userId, testType };
 
-    // FIX: Tambahkan filter modulId agar tidak menghapus hasil modul lain
-    if (modulId && mongoose.Types.ObjectId.isValid(modulId)) {
+    // PERBAIKAN: Validasi ketat untuk post-test-modul
+    if (testType === 'post-test-modul') {
+      if (!modulId || !mongoose.Types.ObjectId.isValid(modulId)) {
+        return res.status(400).json({ message: "Modul ID valid diperlukan untuk menghapus post-test modul." });
+      }
       query.modulId = new mongoose.Types.ObjectId(modulId);
     }
 
-    const result = await Result.deleteOne(query);
+    // Ganti deleteOne menjadi deleteMany untuk membersihkan jika ada duplikat data error sebelumnya
+    const result = await Result.deleteMany(query);
 
     if (result.deletedCount === 0) {
       // Tidak apa-apa jika tidak ada yang dihapus, mungkin memang belum ada hasilnya.
