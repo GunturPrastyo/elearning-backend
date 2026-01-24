@@ -119,7 +119,7 @@ const submitTest = async (req, res) => {
     // --- Kalkulasi Skor Berdasarkan 4 Komponen ---    
     let accuracyScore;
 
-    // 1. Skor Ketepatan Jawaban (Sₜ) - Bobot 60%
+    // 1. Skor Ketepatan Jawaban (Sₜ) - Bobot 80%
     if (testType === "pre-test-global") {
       // --- START: Logika Kalkulasi Skor Akurasi untuk Pre-test Global ---
       // Kalkulasi ini harus dilakukan di awal untuk mendapatkan `accuracyScore`
@@ -168,25 +168,25 @@ const submitTest = async (req, res) => {
       accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
     }
 
-    // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 15%
+    // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 5%
     // DIKEMBALIKAN KE RUMUS AWAL: Berdasarkan total waktu pengerjaan.
     const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
     const timeScore = timeEfficiency * 100;
 
-    // 3. Skor Stabilitas Jawaban (S𝑐) - Bobot 10%
+    // 3. Skor Stabilitas Jawaban (S𝑐) - Bobot 5%
     // Semakin sedikit perubahan, semakin tinggi skornya. Maksimal perubahan ditoleransi = jumlah soal.
     const changes = answerChanges || 0;
     const changePenalty = totalQuestions > 0 ? Math.min(changes / totalQuestions, 1) : 0;
     const answerStabilityScore = (1 - changePenalty) * 100;
 
-    // 4. Skor Fokus (S𝑏) - Bobot 15%
+    // 4. Skor Fokus (S𝑏) - Bobot 10%
     // Semakin sedikit keluar tab, semakin tinggi skornya. Toleransi 3x keluar tab.
     const exits = tabExits || 0;
     const focusPenalty = exits > 3 ? 1 : exits / 3;
     const focusScore = (1 - focusPenalty) * 100;
 
     // Kalkulasi Skor Akhir (Final Score)
-    const finalScore = parseFloat(((accuracyScore * 0.60) + (timeScore * 0.15) + (answerStabilityScore * 0.10) + (focusScore * 0.15)).toFixed(2));
+    const finalScore = parseFloat(((accuracyScore * 0.80) + (timeScore * 0.05) + (answerStabilityScore * 0.05) + (focusScore * 0.10)).toFixed(2));
 
     // Siapkan objek rincian skor untuk disimpan
     const scoreDetails = {
