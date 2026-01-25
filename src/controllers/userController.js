@@ -381,7 +381,7 @@ export const forgotPassword = async (req, res) => {
     // Pastikan FRONTEND_URL ada di .env, atau fallback ke localhost:3000
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
-    const logoUrl = `${frontendUrl}/logo1.webp`; // Mengambil logo dari folder public frontend
+    const logoUrl = `${frontendUrl}/logo2.webp`; // Mengambil logo dari folder public frontend
 
     // 5. Buat Template Email HTML
     const message = `Anda meminta reset password. Silakan klik link berikut: ${resetUrl}`; // Fallback untuk klien email teks biasa
@@ -464,12 +464,7 @@ export const forgotPassword = async (req, res) => {
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto; margin-bottom: 10px; display: inline-block;" />
-            <h1>KELAS</h1>
-          </div>
           <div class="content">
-            <div class="hero-icon">🔐</div>
             <h2 style="margin-top: 0; color: #111827;">Reset Password</h2>
             <p style="text-align: left;">Halo <strong>${user.name}</strong>,</p>
             <p style="text-align: left;">Kami menerima permintaan untuk mereset password akunmu. Klik tombol di bawah ini untuk membuat password baru:</p>
