@@ -464,6 +464,9 @@ export const forgotPassword = async (req, res) => {
       </head>
       <body>
         <div class="container">
+          <div class="header">
+            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto; margin-bottom: 10px; display: inline-block;" />
+          </div>
           <div class="content">
             <h2 style="margin-top: 0; color: #111827;">Reset Password</h2>
             <p style="text-align: left;">Halo <strong>${user.name}</strong>,</p>
