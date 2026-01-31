@@ -471,6 +471,11 @@ export const getStudentAnalytics = async (req, res) => {
       ? Math.round(userTestResults.reduce((sum, r) => sum + r.timeTaken, 0) / userTestResults.length)
       : 0;
 
+    // Hitung Rata-rata Nilai Keseluruhan (Topik + Modul)
+    const averageScore = userTestResults.length > 0
+      ? Math.round(userTestResults.reduce((sum, r) => sum + r.score, 0) / userTestResults.length)
+      : 0;
+
     const topicResults = userTestResults.filter(r => r.testType === 'post-test-topik');
     let weakestTopic = null;
     if (topicResults.length > 0) {
@@ -577,6 +582,7 @@ export const getStudentAnalytics = async (req, res) => {
     res.status(200).json({
       progress,
       averageTimeInSeconds,
+      averageScore, // Kirim rata-rata nilai keseluruhan ke frontend
       weakestTopic,
       detailedPerformance: detailedPerformance.map(({ moduleId, topicIds, ...rest }) => rest), // Hapus properti internal
     });
