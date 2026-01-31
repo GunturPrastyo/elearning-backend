@@ -520,9 +520,9 @@ export const getStudentAnalytics = async (req, res) => {
        {
          $group: {
            _id: "$modulId",
-           // Ambil skor tes modul terbaru
+           // Ambil skor tes modul terbaik (gunakan $max agar tidak tertimpa oleh post-test-topik yang lebih baru)
            moduleScore: {
-             $first: { $cond: [{ $eq: ["$testType", "post-test-modul"] }, "$score", "$$REMOVE"] }
+             $max: { $cond: [{ $eq: ["$testType", "post-test-modul"] }, "$score", null] }
            },
            // Hitung skor rata-rata tes topik
            avgTopicScore: {
