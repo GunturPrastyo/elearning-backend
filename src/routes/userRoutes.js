@@ -14,6 +14,7 @@ import {
   deleteUser,
   forgotPassword,
   resetPassword,
+  verifyEmail,
 } from "../controllers/userController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/upload.js";
@@ -22,6 +23,7 @@ const router = express.Router();
 
 // Rute Autentikasi
 router.post("/register", registerUser);
+router.post("/verify-email", verifyEmail); // Rute verifikasi email
 router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword); // Rute baru
 router.put("/reset-password/:token", resetPassword); // Rute reset password
