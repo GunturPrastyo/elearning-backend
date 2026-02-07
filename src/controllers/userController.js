@@ -91,6 +91,41 @@ export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
   return true; // Defaultnya, kunci modul jika ada level yang tidak dikenal.
 };
 
+// ========================= VERIFY EMAIL =========================
+export const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({ message: "Token verifikasi diperlukan." });
+    }
+
+    // 1. Verifikasi token JWT yang berisi data registrasi sementara
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(400).json({ message: "Link verifikasi tidak valid atau sudah kadaluwarsa." });
+    }
+
+    const { name, email, password, role } = decoded;
+
+    // 2. Cek apakah email sudah terdaftar (mencegah duplikasi jika user mendaftar ulang saat link dikirim)
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email sudah terdaftar." });
+    }
+
+    // 3. Buat user baru di database SEKARANG (setelah verifikasi berhasil)
+    await User.create({ name, email, password, role, isVerified: true });
+    
+    res.status(200).json({ message: "Email berhasil diverifikasi. Silakan login." });
+  } catch (error) {
+    console.error("Verify Email Error:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
 // ========================= GET USER PROFILE =========================
 export const getUserProfile = async (req, res) => {
   try {
@@ -136,25 +171,75 @@ export const registerUser = async (req, res) => {
     if (existingUser)
       return res.status(400).json({ message: "Email sudah digunakan" });
 
+    // Hash password sebelum dimasukkan ke token (agar aman saat dikirim)
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = await User.create({
-      name,
-      email,
-      password: hashedPassword,
-      role: role === "admin" ? "admin" : "user",
-    });
 
-    const userObject = newUser.toObject();
-    delete userObject.password;
+    // Buat payload token berisi data user sementara (Stateless Registration)
+    const userPayload = {
+      name, email, password: hashedPassword, role: role === "admin" ? "admin" : "user"
+    };
 
-    res.status(201).json({
-      message: "Registrasi berhasil. Silakan login.",
-      user: { ...userObject, hasPassword: true }, // User yang register pasti punya password
-      // Mengirimkan kembali kredensial untuk pre-fill form login di frontend
-      loginCredentials: {
+    // Generate JWT Token (berlaku 1 jam)
+    // Token ini menyimpan data user sementara, jadi TIDAK perlu simpan ke DB dulu
+    const verificationToken = jwt.sign(userPayload, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    // Kirim Email Verifikasi
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    // Menggunakan path /verif-email sesuai file yang ada di frontend
+    const verifyUrl = `${frontendUrl}/verif-email?token=${verificationToken}`;
+    const logoUrl = `${frontendUrl}/logo2.webp`;
+
+    const message = `Verifikasi email Anda: ${verifyUrl}`;
+    const htmlMessage = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 0; line-height: 1.6; }
+          .container { max-width: 600px; margin: 30px auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; }
+          .header { background-color: #2563eb; padding: 30px 20px; text-align: center; }
+          .content { padding: 20px 30px 40px; color: #374151; text-align: center; }
+          .button { background-color: #2563eb; color: #ffffff !important; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: 600; display: inline-block; margin: 25px 0; }
+          .footer { background-color: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto;" />
+          </div>
+          <div class="content">
+            <h2 style="margin-top: 0; color: #111827;">Verifikasi Email</h2>
+            <p>Halo <strong>${name}</strong>,</p>
+            <p>Terima kasih telah mendaftar. Silakan klik tombol di bawah ini untuk memverifikasi email Anda dan mengaktifkan akun:</p>
+            <a href="${verifyUrl}" class="button">Verifikasi Email Saya</a>
+            <p style="font-size: 12px; margin-top: 20px;">Jika tombol tidak berfungsi, salin link ini: <br/><a href="${verifyUrl}" style="color: #2563eb;">${verifyUrl}</a></p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} E-Learning Personalisasi.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    try {
+      await sendEmail({
         email: email,
-        password: password, // Mengirim password asli yang diinput user
-      },
+        subject: 'Verifikasi Email - E-Learning Personalisasi',
+        message,
+        html: htmlMessage
+      });
+    } catch (err) {
+      console.error("Email verification send error:", err);
+      // Opsional: Hapus user jika email gagal dikirim agar bisa daftar ulang
+      return res.status(500).json({ message: "Gagal mengirim email verifikasi." });
+    }
+
+    res.status(200).json({
+      message: "Registrasi berhasil. Silakan cek email Anda untuk verifikasi.",
+      // Tidak mengirim loginCredentials agar user tidak bisa auto-login sebelum verifikasi
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -265,6 +350,11 @@ export const loginUser = async (req, res) => {
     if (!isMatch)
       return res.status(400).json({ message: "Password salah" });
 
+    // Cek apakah email sudah diverifikasi
+    if (user.isVerified === false) {
+      return res.status(401).json({ message: "Email belum diverifikasi. Silakan cek inbox email Anda." });
+    }
+
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
@@ -308,6 +398,7 @@ export const googleAuth = async (req, res) => {
         name,
         avatar: picture,
         role: 'user', // Default role untuk pengguna baru dari Google
+        isVerified: true, // User Google otomatis terverifikasi
         password: null // Akun Google tidak memiliki password
       });
     } else {
