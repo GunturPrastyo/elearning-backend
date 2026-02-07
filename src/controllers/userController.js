@@ -119,7 +119,7 @@ export const verifyEmail = async (req, res) => {
     // 3. Buat user baru di database SEKARANG (setelah verifikasi berhasil)
     await User.create({ name, email, password, role, isVerified: true });
     
-    res.status(200).json({ message: "Email berhasil diverifikasi. Silakan login." });
+    res.status(200).json({ message: "Email berhasil diverifikasi. Silakan login.", email });
   } catch (error) {
     console.error("Verify Email Error:", error);
     res.status(500).json({ message: "Terjadi kesalahan server" });
@@ -180,7 +180,6 @@ export const registerUser = async (req, res) => {
     };
 
     // Generate JWT Token (berlaku 1 jam)
-    // Token ini menyimpan data user sementara, jadi TIDAK perlu simpan ke DB dulu
     const verificationToken = jwt.sign(userPayload, process.env.JWT_SECRET, { expiresIn: '1h' });
 
     // Kirim Email Verifikasi
@@ -207,14 +206,13 @@ export const registerUser = async (req, res) => {
       <body>
         <div class="container">
           <div class="header">
-            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto;" />
+          
           </div>
           <div class="content">
             <h2 style="margin-top: 0; color: #111827;">Verifikasi Email</h2>
             <p>Halo <strong>${name}</strong>,</p>
             <p>Terima kasih telah mendaftar. Silakan klik tombol di bawah ini untuk memverifikasi email Anda dan mengaktifkan akun:</p>
             <a href="${verifyUrl}" class="button">Verifikasi Email Saya</a>
-            <p style="font-size: 12px; margin-top: 20px;">Jika tombol tidak berfungsi, salin link ini: <br/><a href="${verifyUrl}" style="color: #2563eb;">${verifyUrl}</a></p>
           </div>
           <div class="footer">
             <p>&copy; ${new Date().getFullYear()} E-Learning Personalisasi.</p>
@@ -556,7 +554,7 @@ export const forgotPassword = async (req, res) => {
       <body>
         <div class="container">
           <div class="header">
-            <img src="${logoUrl}" alt="Logo" style="width: 80px; height: auto; margin-bottom: 10px; display: inline-block;" />
+            
           </div>
           <div class="content">
             <h2 style="margin-top: 0; color: #111827;">Reset Password</h2>
@@ -568,10 +566,7 @@ export const forgotPassword = async (req, res) => {
             <p style="text-align: left;">Link ini akan kedaluwarsa dalam <strong>15 menit</strong>.</p>
             <p style="text-align: left;">Jika Anda tidak meminta ini, abaikan saja email ini. Akun Anda tetap aman.</p>
             
-            <div class="link-fallback">
-              <p>Jika tombol di atas tidak berfungsi, salin dan tempel link berikut ke browser Anda:</p>
-              <a href="${resetUrl}" style="color: #2563eb;">${resetUrl}</a>
-            </div>
+       
           </div>
           <div class="footer">
             <p>&copy; ${new Date().getFullYear()} E-Learning Personalisasi. All rights reserved.</p>
