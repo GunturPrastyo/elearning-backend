@@ -1817,6 +1817,27 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
     });
   }
 
+  // --- Calculate Class Averages ---
+  const allUsers = await User.find({ role: 'user' }).select('competencyProfile').lean();
+  const featureTotalScoreMap = new Map();
+  const featureCountMap = new Map();
+
+  allUsers.forEach(u => {
+    if (u.competencyProfile && Array.isArray(u.competencyProfile)) {
+      const userFeatureMaxScores = new Map();
+      u.competencyProfile.forEach(comp => {
+        const fid = comp.featureId.toString();
+        const current = userFeatureMaxScores.get(fid) || 0;
+        if (comp.score > current) userFeatureMaxScores.set(fid, comp.score);
+      });
+
+      userFeatureMaxScores.forEach((score, fid) => {
+        featureTotalScoreMap.set(fid, (featureTotalScoreMap.get(fid) || 0) + score);
+        featureCountMap.set(fid, (featureCountMap.get(fid) || 0) + 1);
+      });
+    }
+  });
+
   // 2. Ambil semua fitur yang ada di database
   const allFeatures = await Feature.find({}).sort({ name: 1 }).lean();
 
@@ -1829,9 +1850,15 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
 
   // 4. Kelompokkan fitur dan tambahkan skor pengguna
   allFeatures.forEach(feature => {
+    const fid = feature._id.toString();
+    const count = featureCountMap.get(fid) || 0;
+    const total = featureTotalScoreMap.get(fid) || 0;
+    const average = count > 0 ? Math.round(total / count) : 0;
+
     const featureData = {
       name: feature.name,
-      score: scoreMap.get(feature._id.toString()) || 0,
+      score: scoreMap.get(fid) || 0,
+      average: average,
     };
     if (groupedFeatures[feature.group]) {
       groupedFeatures[feature.group].push(featureData);
