@@ -1013,7 +1013,22 @@ const getAnalytics = async (req, res) => {
       {
         $match: {
           userId: new mongoose.Types.ObjectId(userId),
-          testType: "post-test-topik",
+          testType: { $in: ["post-test-topik", "post-test-modul"] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          averageScore: { $avg: "$score" },
+        },
+      },
+    ]);
+
+    // Calculate Class Average Score
+    const classAverageScoreResult = await Result.aggregate([
+      {
+        $match: {
+          testType: { $in: ["post-test-topik", "post-test-modul"] },
         },
       },
       {
@@ -1058,6 +1073,7 @@ const getAnalytics = async (req, res) => {
     }
 
     const averageScore = averageScoreResult.length > 0 ? parseFloat(averageScoreResult[0].averageScore.toFixed(2)) : 0;
+    const classAverageScore = classAverageScoreResult.length > 0 ? parseFloat(classAverageScoreResult[0].averageScore.toFixed(2)) : 0;
 
     // Find Weakest Topic
     const weakestTopicResult = await Result.aggregate([
@@ -1124,6 +1140,7 @@ const getAnalytics = async (req, res) => {
 
     res.status(200).json({
       averageScore,
+      classAverageScore,
       weakestTopic,
       totalStudyTime,
       dailyStreak,

@@ -700,6 +700,30 @@ export const getCompetencyProfile = async (req, res) => {
       });
     }
 
+    // --- Calculate Class Averages ---
+    const featureStats = await User.aggregate([
+      { $unwind: "$competencyProfile" },
+      {
+        $group: {
+          _id: { userId: "$_id", featureId: "$competencyProfile.featureId" },
+          maxScore: { $max: "$competencyProfile.score" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.featureId",
+          averageScore: { $avg: "$maxScore" }
+        }
+      }
+    ]);
+
+    const averageScoreMap = new Map();
+    featureStats.forEach(stat => {
+      if (stat._id) {
+        averageScoreMap.set(stat._id.toString(), stat.averageScore);
+      }
+    });
+
     // 2. Ambil semua fitur yang ada di database
     const allFeatures = await Feature.find({}).sort({ name: 1 }).lean();
 
@@ -712,9 +736,11 @@ export const getCompetencyProfile = async (req, res) => {
 
     // 4. Kelompokkan fitur dan tambahkan skor pengguna
     allFeatures.forEach(feature => {
+      const featureIdStr = feature._id.toString();
       const featureData = {
         name: feature.name,
-        score: scoreMap.get(feature._id.toString()) || 0,
+        score: scoreMap.get(featureIdStr) || 0,
+        average: Math.round(averageScoreMap.get(featureIdStr) || 0),
       };
       if (groupedFeatures[feature.group]) {
         groupedFeatures[feature.group].push(featureData);
