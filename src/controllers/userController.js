@@ -769,7 +769,7 @@ export const getAllUsers = async (req, res) => {
 // ========================= ADMIN: CREATE USER =========================
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, kelas } = req.body;
 
     if (!name || !email) {
       return res.status(400).json({ message: "Nama dan email wajib diisi." });
@@ -789,6 +789,7 @@ export const createUser = async (req, res) => {
       email,
       password: hashedPassword,
       role: role || "user", // Default role adalah 'user'
+      kelas,
     });
 
     const userObject = newUser.toObject();
@@ -800,6 +801,42 @@ export const createUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating user:", error);
+    res.status(500).json({ message: "Terjadi kesalahan server" });
+  }
+};
+
+// ========================= ADMIN: UPDATE USER =========================
+export const updateUser = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { name, email, role, kelas } = req.body;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "Pengguna tidak ditemukan." });
+    }
+
+    // Cek jika email baru sudah digunakan oleh user lain
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: "Email sudah digunakan." });
+      }
+    }
+
+    user.name = name || user.name;
+    user.email = email || user.email;
+    user.role = role || user.role;
+    if (kelas !== undefined) user.kelas = kelas;
+
+    const updatedUser = await user.save();
+    const userObject = updatedUser.toObject();
+    delete userObject.password;
+
+    res.status(200).json(userObject);
+  } catch (error) {
+    console.error("Error updating user:", error);
     res.status(500).json({ message: "Terjadi kesalahan server" });
   }
 };

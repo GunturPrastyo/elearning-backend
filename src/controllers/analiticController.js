@@ -436,7 +436,7 @@ export const getAdminAnalytics = async (req, res) => {
  */
 export const getUsersList = async (req, res) => {
   try {
-    const users = await User.find({ role: 'user' }).select('_id name').sort({ name: 1 });
+    const users = await User.find({ role: 'user' }).select('_id name kelas').sort({ name: 1 });
     res.status(200).json(users);
   } catch (error) {
     console.error("Error fetching users list:", error);
