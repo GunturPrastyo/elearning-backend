@@ -483,6 +483,71 @@ export const getUsersList = async (req, res) => {
 };
 
 /**
+ * @desc    Get leaderboard of students per module based on post-test-modul score
+ * @route   GET /api/analytics/module-leaderboard
+ * @access  Private (Admin)
+ */
+export const getModuleLeaderboard = async (req, res) => {
+  try {
+    const leaderboard = await Modul.aggregate([
+      { $sort: { order: 1, title: 1 } }, // Urutkan modul berdasarkan urutan/judul
+      {
+        $lookup: {
+          from: "results",
+          let: { modulId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$modulId", "$$modulId"] },
+                    { $eq: ["$testType", "post-test-modul"] } // Hanya ambil nilai Post-Test Akhir Modul
+                  ]
+                }
+              }
+            },
+            // Lookup ke user untuk mendapatkan nama dan kelas
+            {
+              $lookup: {
+                from: "users",
+                localField: "userId",
+                foreignField: "_id",
+                as: "user"
+              }
+            },
+            { $unwind: "$user" },
+            { $match: { "user.role": "user" } }, // Hanya ambil siswa (bukan admin)
+            {
+              $project: {
+                _id: 0,
+                userId: "$user._id",
+                name: "$user.name",
+                kelas: "$user.kelas",
+                score: 1 // Ambil skor dari result
+              }
+            },
+            { $sort: { score: -1 } } // Urutkan siswa dari nilai tertinggi
+          ],
+          as: "students"
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          moduleTitle: "$title",
+          students: 1
+        }
+      }
+    ]);
+
+    res.status(200).json(leaderboard);
+  } catch (error) {
+    console.error("Error fetching module leaderboard:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
+
+/**
  * @desc    Get analytics data for a specific student
  * @route   GET /api/analytics/student-analytics/:userId
  * @access  Private (Admin)
