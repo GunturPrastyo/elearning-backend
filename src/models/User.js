@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, default: null },
   role: { type: String, enum: ["user", "admin", "super_admin"], default: "user" },
   avatar: { type: String, default: "" },
+  kelas: { type: String, default: null },
   topicCompletions: [
     { type: mongoose.Schema.Types.ObjectId, ref: "Topik" }
   ],

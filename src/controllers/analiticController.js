@@ -436,7 +436,45 @@ export const getAdminAnalytics = async (req, res) => {
  */
 export const getUsersList = async (req, res) => {
   try {
-    const users = await User.find({ role: 'user' }).select('_id name kelas').sort({ name: 1 });
+    // Menggunakan agregasi untuk mendapatkan user beserta rata-rata skornya
+    const users = await User.aggregate([
+      { $match: { role: 'user' } },
+      {
+        $lookup: {
+          from: 'results',
+          localField: '_id',
+          foreignField: 'userId',
+          pipeline: [
+            // Hanya ambil nilai dari post-test topik dan modul
+            { $match: { testType: { $in: ['post-test-topik', 'post-test-modul'] } } },
+            { $project: { score: 1 } }
+          ],
+          as: 'scores'
+        }
+      },
+      {
+        $addFields: {
+          averageScore: {
+            $cond: {
+              if: { $gt: [{ $size: "$scores" }, 0] },
+              then: { $avg: "$scores.score" },
+              else: 0 // Jika belum ada nilai, anggap 0
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          kelas: 1,
+          averageScore: { $round: ["$averageScore", 1] }
+        }
+      },
+      // Default sort: Nilai terendah ke tertinggi (Ascending)
+      { $sort: { averageScore: 1 } }
+    ]);
+
     res.status(200).json(users);
   } catch (error) {
     console.error("Error fetching users list:", error);
