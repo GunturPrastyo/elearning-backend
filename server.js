@@ -10,7 +10,7 @@ import userRoutes from "./src/routes/userRoutes.js";
 import topikRoutes from "./src/routes/topikRoutes.js";
 import materiRoutes from "./src/routes/materiRoutes.js";
 import questionRoutes from "./src/routes/questionRoutes.js";
-import testRoutes from "./src/routes/testRoutes.js";
+
 import resultRoutes from "./src/routes/resultRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import featureRoutes from "./src/routes/featureRoutes.js";
@@ -58,7 +58,7 @@ app.use("/api/topik", topikRoutes);
 app.use("/api/materi", materiRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/questions", questionRoutes);
-app.use("/api/tests", testRoutes);
+
 app.use("/api/results", resultRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/features", featureRoutes);

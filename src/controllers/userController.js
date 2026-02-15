@@ -61,6 +61,7 @@ export const recalculateUserLearningLevel = async (userId) => {
 
 // --- FUNGSI HELPER BARU UNTUK MENENTUKAN STATUS PENGUNCIAN MODUL ---
 export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
+  // Jika level pengguna belum ditentukan (null/undefined/kosong), kunci semua modul.
   if (!userLearningLevel) return true;
 
   const level = userLearningLevel.charAt(0).toUpperCase() + userLearningLevel.slice(1).toLowerCase();
@@ -81,8 +82,7 @@ export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
     return !(isDasar || isMenengah);
   }
 
-  // Aturan 3 (Default): Jika level pengguna 'Dasar' (atau belum ditentukan),
-  // hanya modul 'mudah' yang terbuka.
+  // Aturan 3: Jika level pengguna 'Dasar', hanya modul 'mudah' yang terbuka.
   if (level === 'Dasar') {
     // Modul terkunci jika kategorinya BUKAN Dasar.
     return !isDasar;
@@ -379,13 +379,28 @@ export const loginUser = async (req, res) => {
 export const googleAuth = async (req, res) => {
   try {
     const { token } = req.body;
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let email, name, picture;
 
-    const payload = ticket.getPayload();
-    const { email, name, picture } = payload;
+    try {
+      // Percobaan 1: Verifikasi sebagai ID Token (Cara Lama/Standard Component)
+      const ticket = await client.verifyIdToken({
+        idToken: token,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      email = payload.email;
+      name = payload.name;
+      picture = payload.picture;
+    } catch (idTokenError) {
+      // Percobaan 2: Verifikasi sebagai Access Token (Cara Baru/Custom Button)
+      client.setCredentials({ access_token: token });
+      const userinfo = await client.request({
+        url: "https://www.googleapis.com/oauth2/v3/userinfo",
+      });
+      email = userinfo.data.email;
+      name = userinfo.data.name;
+      picture = userinfo.data.picture;
+    }
 
     let user = await User.findOne({ email });
 

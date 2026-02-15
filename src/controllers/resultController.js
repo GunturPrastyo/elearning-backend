@@ -12,10 +12,228 @@ import { recalculateUserLearningLevel } from "./userController.js"; // Impor fun
 import path from 'path';
 import fs from 'fs';
 
+// =====================================================================
+// SECTION 1: INTERNAL HELPER FUNCTIONS (LOGIC & CALCULATION)
+// =====================================================================
+
 /**
- * @desc    Save a test result
- * @route   POST /api/results
- * @access  Private (user)
+ * Menghitung rincian skor berdasarkan 4 komponen: Akurasi, Waktu, Stabilitas, Fokus.
+ */
+const calculateFinalScoreDetails = (accuracyScore, timeTaken, totalDuration, answerChanges, tabExits, totalQuestions) => {
+  // 1. Skor Waktu Pengerjaan (Sw) - Bobot 5%
+  const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
+  const timeScore = timeEfficiency * 100;
+
+  // 2. Skor Stabilitas Jawaban (Sc) - Bobot 5%
+  const changes = answerChanges || 0;
+  const changePenalty = totalQuestions > 0 ? Math.min(changes / totalQuestions, 1) : 0;
+  const answerStabilityScore = (1 - changePenalty) * 100;
+
+  // 3. Skor Fokus (Sb) - Bobot 10%
+  const exits = tabExits || 0;
+  const focusPenalty = exits > 3 ? 1 : exits / 3;
+  const focusScore = (1 - focusPenalty) * 100;
+
+  // Kalkulasi Skor Akhir (Final Score)
+  const finalScore = parseFloat(((accuracyScore * 0.80) + (timeScore * 0.05) + (answerStabilityScore * 0.05) + (focusScore * 0.10)).toFixed(2));
+
+  return {
+    finalScore,
+    scoreDetails: {
+      accuracy: parseFloat(accuracyScore.toFixed(2)),
+      time: parseFloat(timeScore.toFixed(2)),
+      stability: parseFloat(answerStabilityScore.toFixed(2)),
+      focus: parseFloat(focusScore.toFixed(2)),
+    }
+  };
+};
+
+/**
+ * Menganalisis kelemahan sub-topik (untuk post-test-topik) atau topik (untuk post-test-modul).
+ */
+const analyzeWeaknesses = async (testType, questions, answers, topikId) => {
+  let weakSubTopics = [];
+  let weakTopics = [];
+
+  // --- Analisis Sub Topik Lemah (Post-Test Topik) ---
+  if (testType === "post-test-topik") {
+    const subTopicAnalysis = {};
+    questions.forEach(q => {
+      if (q.subMateriId) {
+        const subId = q.subMateriId.toString();
+        if (!subTopicAnalysis[subId]) subTopicAnalysis[subId] = { correct: 0, total: 0 };
+        subTopicAnalysis[subId].total++;
+        if (answers[q._id.toString()] === q.answer) subTopicAnalysis[subId].correct++;
+      }
+    });
+
+    const weakSubTopicDetails = [];
+    for (const subId in subTopicAnalysis) {
+      const analysis = subTopicAnalysis[subId];
+      const subTopicScore = analysis.total > 0 ? (analysis.correct / analysis.total) * 100 : 0;
+      if (subTopicScore < 70) weakSubTopicDetails.push({ subId, score: parseFloat(subTopicScore.toFixed(2)) });
+    }
+
+    if (weakSubTopicDetails.length > 0) {
+      const materiWithWeakSubTopics = await Materi.findOne({ topikId: new mongoose.Types.ObjectId(topikId) });
+      if (materiWithWeakSubTopics?.subMateris) {
+        const weakSubTopicsMap = new Map(weakSubTopicDetails.map(d => [d.subId, d.score]));
+        weakSubTopics = materiWithWeakSubTopics.subMateris
+          .filter(sub => weakSubTopicsMap.has(sub._id.toString()))
+          .map(sub => ({ subMateriId: sub._id, title: sub.title, score: weakSubTopicsMap.get(sub._id.toString()) }));
+      }
+    }
+  }
+
+  // --- Analisis Topik Lemah (Post-Test Modul) ---
+  if (testType === "post-test-modul") {
+    const topicPerformance = {};
+    questions.forEach(q => {
+      if (q.topikId) {
+        const topikIdStr = q.topikId.toString();
+        if (!topicPerformance[topikIdStr]) topicPerformance[topikIdStr] = { correct: 0, total: 0 };
+        topicPerformance[topikIdStr].total++;
+        if (answers[q._id.toString()] === q.answer) topicPerformance[topikIdStr].correct++;
+      }
+    });
+
+    const weakTopicIds = [];
+    for (const topikId in topicPerformance) {
+      const perf = topicPerformance[topikId];
+      const score = (perf.correct / perf.total) * 100;
+      if (score < 70) weakTopicIds.push({ id: topikId, score: Math.round(score) });
+    }
+
+    if (weakTopicIds.length > 0) {
+      const topicDetails = await Topik.find({ '_id': { $in: weakTopicIds.map(t => t.id) } }).select('title slug').lean();
+      const topicScoreMap = new Map(weakTopicIds.map(t => [t.id, t.score]));
+      weakTopics = topicDetails.map(topic => ({
+        topikId: topic._id, title: topic.title, slug: topic.slug, score: topicScoreMap.get(topic._id.toString())
+      }));
+    }
+  }
+
+  return { weakSubTopics, weakTopics };
+};
+
+/**
+ * Memproses logika khusus Pre-Test Global (Skor Fitur & Level Belajar).
+ */
+const processPreTestGlobal = async (questions, answers) => {
+  const allFeatures = await Feature.find().lean();
+  const relevantModulIds = [...new Set(questions.map(q => q.modulId).filter(id => id))].map(id => new mongoose.Types.ObjectId(id));
+  const relevantModules = await Modul.find({ _id: { $in: relevantModulIds } }).select('featureWeights title').lean();
+  const moduleWeightsMap = new Map(relevantModules.map(m => [m._id.toString(), m.featureWeights]));
+  const moduleTitleMap = new Map(relevantModules.map(m => [m._id.toString(), m.title]));
+
+  const featureScores = {}; // Global feature scores
+  const moduleFeatureScores = {}; // Per-module feature scores
+
+  // Inisialisasi struktur data per modul
+  relevantModulIds.forEach(modulId => {
+    const moduleIdStr = modulId.toString();
+    const moduleWeights = moduleWeightsMap.get(moduleIdStr) || [];
+    moduleFeatureScores[moduleIdStr] = {
+      moduleTitle: moduleTitleMap.get(moduleIdStr) || 'Unknown Module',
+      questionCount: 0,
+      features: {}
+    };
+    moduleWeights.forEach(fw => {
+      const featureIdStr = fw.featureId.toString();
+      const featureInfo = allFeatures.find(af => af._id.toString() === featureIdStr);
+      moduleFeatureScores[moduleIdStr].features[featureIdStr] = {
+        accumulatedWeightedScore: 0,
+        weight: fw.weight || 0,
+        name: featureInfo?.name || 'Unknown',
+        group: featureInfo?.group || 'Dasar'
+      };
+    });
+  });
+
+  // Proses setiap soal
+  questions.forEach(q => {
+    const isCorrect = answers[q._id.toString()] === q.answer;
+    const moduleIdStr = q.modulId ? q.modulId.toString() : null;
+    const moduleWeights = moduleIdStr ? moduleWeightsMap.get(moduleIdStr) : [];
+
+    // 1. Hitung Global Feature Scores
+    if (moduleWeights && moduleWeights.length > 0) {
+      moduleWeights.forEach(fw => {
+        const featureId = fw.featureId.toString();
+        if (!featureScores[featureId]) {
+          const featureInfo = allFeatures.find(af => af._id.toString() === featureId);
+          featureScores[featureId] = { earned: 0, max: 0, name: featureInfo?.name || 'Unknown', group: featureInfo?.group || 'Dasar' };
+        }
+        featureScores[featureId].max += (fw.weight || 0);
+        if (isCorrect) featureScores[featureId].earned += (fw.weight || 0);
+      });
+    }
+
+    // 2. Hitung Per-Module Feature Scores
+    if (moduleIdStr && moduleFeatureScores[moduleIdStr]) {
+      moduleFeatureScores[moduleIdStr].questionCount++;
+      if (isCorrect) {
+        for (const featureIdStr in moduleFeatureScores[moduleIdStr].features) {
+          const featureData = moduleFeatureScores[moduleIdStr].features[featureIdStr];
+          featureData.accumulatedWeightedScore += (100 * featureData.weight);
+        }
+      }
+    }
+  });
+
+  // Format Output: Feature Scores By Module
+  const featureScoresByModule = Object.entries(moduleFeatureScores).map(([moduleId, data]) => {
+    const features = Object.entries(data.features).map(([featureId, fData]) => ({
+      featureId,
+      featureName: fData.name,
+      group: fData.group,
+      score: data.questionCount > 0 ? parseFloat((fData.accumulatedWeightedScore / data.questionCount).toFixed(2)) : 0,
+    }));
+    return { moduleId, moduleTitle: data.moduleTitle, features };
+  });
+
+  // Format Output: Calculated Global Feature Scores
+  const calculatedFeatureScores = Object.entries(featureScores).map(([featureId, data]) => ({
+    featureId,
+    featureName: data.name,
+    group: data.group,
+    score: data.max > 0 ? (data.earned / data.max) * 100 : 0,
+  }));
+
+  // Hitung Akurasi Total (Weighted)
+  let totalEarnedWeight = 0;
+  let totalMaxWeight = 0;
+  Object.values(featureScores).forEach(data => {
+    totalEarnedWeight += data.earned;
+    totalMaxWeight += data.max;
+  });
+  const accuracyScore = totalMaxWeight > 0 ? (totalEarnedWeight / totalMaxWeight) * 100 : 0;
+
+  // Hitung Rata-rata Grup
+  const groupScores = { Dasar: [], Menengah: [], Lanjutan: [] };
+  calculatedFeatureScores.forEach(fs => {
+    const groupName = fs.group ? fs.group.charAt(0).toUpperCase() + fs.group.slice(1).toLowerCase() : 'Dasar';
+    if (groupScores[groupName]) groupScores[groupName].push(fs.score);
+  });
+  const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+  const avgScoreDasar = calculateAverage(groupScores.Dasar);
+  const avgScoreMenengah = calculateAverage(groupScores.Menengah);
+
+  return {
+    accuracyScore,
+    featureScoresByModule,
+    calculatedFeatureScores,
+    avgScoreDasar,
+    avgScoreMenengah
+  };
+};
+
+// =====================================================================
+// SECTION 2: CORE TEST OPERATIONS (CREATE & SUBMIT)
+// =====================================================================
+
+/**
+ * @desc    Save a test result (Manual creation)
  */
 const createResult = async (req, res) => {
   try {
@@ -64,14 +282,10 @@ const createResult = async (req, res) => {
 
 /**
  * @desc    Submit answers for a test (pre-test, post-test topik, post-test modul)
- * @route   POST /api/results/submit-test
- * @access  Private
  */
 const submitTest = async (req, res) => {
   try {
-    // DEBUGGING: Log seluruh body request yang masuk ke endpoint ini
-    console.log("[DEBUG] Menerima request ke /api/results/submit-test dengan body:", req.body);
-
+   
     const userId = req.user._id;
     const { testType, modulId, topikId, answers, timeTaken, answerChanges, tabExits, timePerQuestion } = req.body;
 
@@ -116,179 +330,28 @@ const submitTest = async (req, res) => {
     const totalQuestions = questions.length;
     const totalDuration = questions.reduce((acc, q) => acc + (q.durationPerQuestion || 60), 0);
 
-    // --- Kalkulasi Skor Berdasarkan 4 Komponen ---    
+    // --- 1. Kalkulasi Skor Akurasi & Fitur (Khusus Pre-Test) ---
     let accuracyScore;
+    let preTestData = null;
 
-    // 1. Skor Ketepatan Jawaban (Sₜ) - Bobot 80%
     if (testType === "pre-test-global") {
-      // --- START: Logika Kalkulasi Skor Akurasi untuk Pre-test Global ---
-      // Kalkulasi ini harus dilakukan di awal untuk mendapatkan `accuracyScore`
-      const allFeatures = await Feature.find().lean();
-      const relevantModulIds = [...new Set(questions.map(q => q.modulId).filter(id => id))];
-      const relevantModules = await Modul.find({ _id: { $in: relevantModulIds } }).select('featureWeights').lean();
-      const moduleWeightsMap = new Map(relevantModules.map(m => [m._id.toString(), m.featureWeights]));
-
-      const featureScoresForAccuracy = {}; // Objek sementara untuk kalkulasi akurasi
-
-      questions.forEach(q => {
-        const isCorrect = answers[q._id.toString()] === q.answer;
-        const moduleWeights = q.modulId ? moduleWeightsMap.get(q.modulId.toString()) : [];
-
-        if (moduleWeights && moduleWeights.length > 0) {
-          moduleWeights.forEach(fw => {
-            const featureId = fw.featureId.toString();
-            if (!featureScoresForAccuracy[featureId]) {
-              featureScoresForAccuracy[featureId] = { earned: 0, max: 0 };
-            }
-            featureScoresForAccuracy[featureId].max += (fw.weight || 0);
-            if (isCorrect) {
-              featureScoresForAccuracy[featureId].earned += (fw.weight || 0);
-            }
-          });
-        }
-      });
-
-      // Hitung accuracyScore berdasarkan total bobot yang didapat
-      let totalEarnedWeight = 0;
-      let totalMaxWeight = 0;
-      Object.values(featureScoresForAccuracy).forEach(data => {
-        totalEarnedWeight += data.earned;
-        totalMaxWeight += data.max;
-      });
-
-      if (totalMaxWeight > 0) {
-        accuracyScore = (totalEarnedWeight / totalMaxWeight) * 100;
-      } else {
-        accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
-      }
-      // --- END: Logika Kalkulasi Skor Akurasi untuk Pre-test Global ---
-
+      preTestData = await processPreTestGlobal(questions, answers);
+      accuracyScore = preTestData.accuracyScore;
     } else {
-      // Kalkulasi ketepatan standar untuk tes lain
       accuracyScore = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
     }
 
-    // 2. Skor Waktu Pengerjaan (S𝑤) - Bobot 5%
-    // DIKEMBALIKAN KE RUMUS AWAL: Berdasarkan total waktu pengerjaan.
-    const timeEfficiency = totalDuration > 0 && timeTaken < totalDuration ? (1 - (timeTaken / totalDuration)) : 0;
-    const timeScore = timeEfficiency * 100;
+    // --- 2. Kalkulasi Skor Akhir & Rincian ---
+    const { finalScore, scoreDetails } = calculateFinalScoreDetails(
+      accuracyScore, timeTaken, totalDuration, answerChanges, tabExits, totalQuestions
+    );
 
-    // 3. Skor Stabilitas Jawaban (S𝑐) - Bobot 5%
-    // Semakin sedikit perubahan, semakin tinggi skornya. Maksimal perubahan ditoleransi = jumlah soal.
-    const changes = answerChanges || 0;
-    const changePenalty = totalQuestions > 0 ? Math.min(changes / totalQuestions, 1) : 0;
-    const answerStabilityScore = (1 - changePenalty) * 100;
-
-    // 4. Skor Fokus (S𝑏) - Bobot 10%
-    // Semakin sedikit keluar tab, semakin tinggi skornya. Toleransi 3x keluar tab.
-    const exits = tabExits || 0;
-    const focusPenalty = exits > 3 ? 1 : exits / 3;
-    const focusScore = (1 - focusPenalty) * 100;
-
-    // Kalkulasi Skor Akhir (Final Score)
-    const finalScore = parseFloat(((accuracyScore * 0.80) + (timeScore * 0.05) + (answerStabilityScore * 0.05) + (focusScore * 0.10)).toFixed(2));
-
-    // Siapkan objek rincian skor untuk disimpan
-    const scoreDetails = {
-      accuracy: parseFloat(accuracyScore.toFixed(2)),
-      time: parseFloat(timeScore.toFixed(2)),
-      stability: parseFloat(answerStabilityScore.toFixed(2)),
-      focus: parseFloat(focusScore.toFixed(2)),
-    };
-
-    // --- Analisis Sub Topik Lemah (hanya untuk post-test-topik) ---
-    // Analisis ini dilakukan pada percobaan saat ini, sebelum memutuskan apakah akan disimpan atau tidak.
-    let weakSubTopics = [];
-    if (testType === "post-test-topik") {
-      const subTopicAnalysis = {}; // { subMateriId: { correct: 0, total: 0 } }
-
-      // 1. Kelompokkan jawaban berdasarkan subMateriId dari soal yang dikerjakan
-      questions.forEach(q => {
-        if (q.subMateriId) {
-          const subId = q.subMateriId.toString();
-          if (!subTopicAnalysis[subId]) {
-            subTopicAnalysis[subId] = { correct: 0, total: 0 };
-          }
-          subTopicAnalysis[subId].total++;
-          if (answers[q._id.toString()] === q.answer) {
-            subTopicAnalysis[subId].correct++;
-          }
-        }
-      });
-
-      // 2. Hitung skor per sub-topik dan filter yang lemah (di bawah 70%)
-      const weakSubTopicDetails = [];
-      for (const subId in subTopicAnalysis) {
-        const analysis = subTopicAnalysis[subId];
-        const subTopicScore = analysis.total > 0 ? (analysis.correct / analysis.total) * 100 : 0;
-        if (subTopicScore < 70) {
-          weakSubTopicDetails.push({ subId, score: parseFloat(subTopicScore.toFixed(2)) });
-        }
-      }
-      const weakSubTopicIds = weakSubTopicDetails.map(d => d.subId);
-
-      if (weakSubTopicIds.length > 0) {
-        // 3. Ambil detail (judul) dari sub-topik yang lemah
-        const materiWithWeakSubTopics = await Materi.findOne({ topikId: new mongoose.Types.ObjectId(topikId) });
-        if (
-          materiWithWeakSubTopics &&
-          materiWithWeakSubTopics.subMateris
-        ) {
-          const weakSubTopicsMap = new Map(weakSubTopicDetails.map(d => [d.subId, d.score]));
-          weakSubTopics = materiWithWeakSubTopics.subMateris.filter(sub => weakSubTopicIds.includes(sub._id.toString())).map(sub => ({ subMateriId: sub._id, title: sub.title, score: weakSubTopicsMap.get(sub._id.toString()) }));
-        }
-      }
-    }
-
-    // --- Analisis Topik Lemah (hanya untuk post-test-modul) ---
-    let weakTopics = [];
-    if (testType === "post-test-modul") {
-      const topicPerformance = {}; // { topikId: { correct: 0, total: 0 } }
-
-      // 1. Kelompokkan jawaban berdasarkan topikId
-      questions.forEach(q => {
-        if (q.topikId) {
-          const topikIdStr = q.topikId.toString();
-          if (!topicPerformance[topikIdStr]) {
-            topicPerformance[topikIdStr] = { correct: 0, total: 0 };
-          }
-          topicPerformance[topikIdStr].total++;
-          if (answers[q._id.toString()] === q.answer) {
-            topicPerformance[topikIdStr].correct++;
-          }
-        }
-      });
-
-      // 2. Hitung skor dan identifikasi topik lemah
-      const weakTopicIds = [];
-      for (const topikId in topicPerformance) {
-        const perf = topicPerformance[topikId];
-        const score = (perf.correct / perf.total) * 100;
-        if (score < 70) { // Batas kelulusan 70%
-          weakTopicIds.push({ id: topikId, score: Math.round(score) });
-        }
-      }
-
-      // 3. Ambil detail topik yang lemah (title, slug)
-      if (weakTopicIds.length > 0) {
-        const topicDetails = await Topik.find({ '_id': { $in: weakTopicIds.map(t => t.id) } }).select('title slug').lean();
-        const topicScoreMap = new Map(weakTopicIds.map(t => [t.id, t.score]));
-        
-        weakTopics = topicDetails.map(topic => ({
-          topikId: topic._id, title: topic.title, slug: topic.slug, score: topicScoreMap.get(topic._id.toString())
-        }));
-      }
-    }
+    // --- 3. Analisis Kelemahan (Sub-Topik / Topik) ---
+    const { weakSubTopics, weakTopics } = await analyzeWeaknesses(testType, questions, answers, topikId);
 
     let result;
     let bestScore = finalScore; // Inisialisasi skor akhir dengan skor saat ini
     let learningPathResult = null;
-    
-    let featureScoresByModule = []; // Variabel baru untuk menyimpan skor per modul
-    // Deklarasikan variabel pre-test di sini agar bisa diakses di scope luar
-    let calculatedFeatureScores = [];
-    let avgScoreDasar = 0;
-    let avgScoreMenengah = 0;
 
     // Logika untuk mengambil nilai terbaik pada post-test topik
     if (testType === "post-test-topik") {
@@ -325,160 +388,21 @@ const submitTest = async (req, res) => {
       }
     } else if (testType === "pre-test-global") {
       const existingResult = await Result.findOne({ userId, testType });
-
-      // Log untuk memastikan blok pre-test global dieksekusi
       console.log(`[DEBUG] Memproses pre-test-global untuk user: ${userId}`);
       
-      // --- START: Logika Penentuan Level Belajar (Skor per Fitur) ---
-      // `accuracyScore` sudah dihitung di atas, sekarang kita hitung skor per fitur untuk menentukan level.
-      const allFeatures = await Feature.find().lean();
-      const relevantModulIds = [...new Set(questions.map(q => q.modulId).filter(id => id))].map(id => new mongoose.Types.ObjectId(id));
-      const relevantModules = await Modul.find({ _id: { $in: relevantModulIds } }).select('featureWeights').lean();
-      const moduleWeightsMap = new Map(relevantModules.map(m => [m._id.toString(), m.featureWeights]));
+      // Ambil data hasil kalkulasi dari helper
+      const { featureScoresByModule, calculatedFeatureScores, avgScoreDasar, avgScoreMenengah } = preTestData;
 
-      const featureScores = {}; // { featureId: { earned: 0, max: 0, name: '', group: '' } }
-
-      questions.forEach(q => {
-        const isCorrect = answers[q._id.toString()] === q.answer;
-        const moduleWeights = q.modulId ? moduleWeightsMap.get(q.modulId.toString()) : [];
-
-        if (moduleWeights && moduleWeights.length > 0) {
-          moduleWeights.forEach(fw => {
-            const featureId = fw.featureId.toString();
-            if (!featureScores[featureId]) {
-              const featureInfo = allFeatures.find(af => af._id.toString() === featureId);
-              featureScores[featureId] = { earned: 0, max: 0, name: featureInfo?.name || 'Unknown', group: featureInfo?.group || 'Dasar' };
-            }
-            featureScores[featureId].max += (fw.weight || 0);
-            if (isCorrect) {
-              featureScores[featureId].earned += (fw.weight || 0);
-            }
-          });
-        }
-      });
-
-      // --- START: Logika Baru untuk Skor Fitur per Modul ---
-      const moduleFeatureScores = {}; // { moduleId: { moduleTitle: '...', features: { featureId: { earned, max, name, group } } } }
-
-      const modulesInfo = await Modul.find({ _id: { $in: relevantModulIds } }).select('title').lean();
-      const moduleTitleMap = new Map(modulesInfo.map(m => [m._id.toString(), m.title]));
-
-      // Inisialisasi struktur data
-      relevantModulIds.forEach(modulId => {
-        const moduleIdStr = modulId.toString();
-        const moduleWeights = moduleWeightsMap.get(moduleIdStr) || [];
-        moduleFeatureScores[moduleIdStr] = {
-          moduleTitle: moduleTitleMap.get(moduleIdStr) || 'Unknown Module',
-          questionCount: 0,
-          features: {}
-        };
-        moduleWeights.forEach(fw => {
-          const featureIdStr = fw.featureId.toString();
-          const featureInfo = allFeatures.find(af => af._id.toString() === featureIdStr);
-          moduleFeatureScores[moduleIdStr].features[featureIdStr] = {
-            accumulatedWeightedScore: 0,
-            weight: fw.weight || 0,
-            name: featureInfo?.name || 'Unknown',
-            group: featureInfo?.group || 'Dasar'
-          };
-        });
-      });
-
-      // Proses setiap soal
-      questions.forEach(q => {
-        if (!q.modulId) return;
-
-        const moduleIdStr = q.modulId.toString();
-        if (moduleFeatureScores[moduleIdStr]) {
-          moduleFeatureScores[moduleIdStr].questionCount++;
-          const isCorrect = answers[q._id.toString()] === q.answer;
-          if (isCorrect) {
-            // Jika benar, tambahkan skor berbobot (100 * bobot) ke setiap fitur di modul itu
-            for (const featureIdStr in moduleFeatureScores[moduleIdStr].features) {
-              const featureData = moduleFeatureScores[moduleIdStr].features[featureIdStr];
-              featureData.accumulatedWeightedScore += (100 * featureData.weight);
-            }
-          }
-        }
-      });
-      
-      // --- END: Logika Baru untuk Skor Fitur per Modul ---
-
-      // Konversi struktur moduleFeatureScores ke array yang lebih mudah digunakan
-      featureScoresByModule = Object.entries(moduleFeatureScores).map(([moduleId, data]) => {
-        // Hitung total bobot yang didapat dan total bobot maksimal untuk modul ini
-        let totalEarnedWeight = 0;
-        let totalMaxWeight = 0;
-
-        const features = Object.entries(data.features).map(([featureId, fData]) => {          
-          // Hitung skor rata-rata: total skor berbobot dibagi jumlah soal di modul itu
-          const finalFeatureScore = data.questionCount > 0 
-            ? parseFloat((fData.accumulatedWeightedScore / data.questionCount).toFixed(2))
-            : 0;
-
-          return {
-            featureId,
-            featureName: fData.name,
-            group: fData.group,
-            score: finalFeatureScore,
-          }
-        });
-        
-        return {
-          moduleId,
-          moduleTitle: data.moduleTitle,
-          features: features
-        };
-      });
-
-      // 2. Hitung skor akhir untuk setiap fitur (gabungan)
-      calculatedFeatureScores = Object.entries(featureScores).map(([featureId, data]) => ({
-        featureId,
-        featureName: data.name,
-        group: data.group, // ex: { earned: 8, max: 10 } -> score: 80
-        score: data.max > 0 ? (data.earned / data.max) * 100 : 0,
-      }));
-
-      // Log skor fitur dan grup untuk debugging
-      console.log('Skor Akhir per Fitur (sebelum dikelompokkan):', calculatedFeatureScores);
-
-      // 3. Kelompokkan skor fitur berdasarkan grupnya
-      const groupScores = {
-        Dasar: [],
-        Menengah: [],
-        Lanjutan: [],
-      };
-      calculatedFeatureScores.forEach(fs => {
-        // Normalisasi nama grup (Title Case) untuk mencocokkan kunci groupScores
-        const groupName = fs.group ? fs.group.charAt(0).toUpperCase() + fs.group.slice(1).toLowerCase() : 'Dasar';
-        if (groupScores[groupName]) {
-          groupScores[groupName].push(fs.score);
-        }
-      });
-
-      // 4. Hitung skor RATA-RATA untuk setiap grup
-      const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-
-      avgScoreDasar = calculateAverage(groupScores.Dasar);
-      avgScoreMenengah = calculateAverage(groupScores.Menengah);
-      // const avgScoreLanjutan = calculateAverage(groupScores.Lanjutan); // Untuk pengembangan di masa depan
-
-      console.log(`[DEBUG] Rata-rata Skor Grup Dasar: ${avgScoreDasar}, Rata-rata Skor Grup Menengah: ${avgScoreMenengah}`);
-
-      // 5. Terapkan Aturan Logis dengan urutan yang benar
-      // Aturan dievaluasi dari yang paling ketat (Lanjutan) ke yang paling longgar (Dasar).
-      // Aturan 1: Cek untuk Level Lanjutan
+      // --- Tentukan Level Belajar ---
       if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) {
         learningPathResult = "Lanjutan";
-      // Aturan 2: Jika tidak lolos Lanjutan, cek untuk Level Menengah
       } else if (avgScoreDasar >= 75) {
         learningPathResult = "Menengah";
       } else {
-        // Aturan 3: Jika semua syarat di atas tidak terpenuhi, pengguna masuk ke level Dasar.
         learningPathResult = "Dasar";
       }
 
-      // --- START: Menyiapkan data profil kompetensi per modul untuk disimpan di User ---
+      // --- Simpan Profil Kompetensi ke User ---
       const competencyProfileData = [];
       featureScoresByModule.forEach(modul => {
         modul.features.forEach(feature => {
@@ -489,23 +413,15 @@ const submitTest = async (req, res) => {
           });
         });
       });
-      // --- END: Menyiapkan data profil kompetensi ---
 
-      // Simpan profil kompetensi baru ke user
       const user = await User.findById(userId);
       user.competencyProfile = competencyProfileData;
-      
-      // FIX: Simpan user terlebih dahulu agar data competencyProfile tersimpan di DB
-      // Hal ini penting karena recalculateUserLearningLevel akan melakukan query ke DB
       await user.save();
 
       user.learningLevel = await recalculateUserLearningLevel(userId);
       await user.save();
       learningPathResult = user.learningLevel; // Gunakan level yang baru dihitung untuk respons
-      // --- END: Logika Baru untuk Pre-test Global ---
 
-      // Pre-test hanya dikerjakan sekali, jadi kita selalu upsert.
-      // Tidak perlu membandingkan dengan skor lama karena metriknya sekarang berbeda.
       result = await Result.findOneAndUpdate(
         { userId, testType: "pre-test-global" },
         {
@@ -631,10 +547,10 @@ const submitTest = async (req, res) => {
         scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
         // DEBUG: Kirim rincian skor fitur untuk debugging di frontend
         ...(testType === "pre-test-global" && {
-          featureScores: calculatedFeatureScores,
-          avgScoreDasar,
-          avgScoreMenengah,
-          featureScoresByModule, // Kirim data baru ini ke frontend
+          featureScores: preTestData.calculatedFeatureScores,
+          avgScoreDasar: preTestData.avgScoreDasar,
+          avgScoreMenengah: preTestData.avgScoreMenengah,
+          featureScoresByModule: preTestData.featureScoresByModule,
         }),
       }
     });
@@ -676,10 +592,13 @@ const logStudyTime = async (req, res) => {
     res.status(500).json({ message: "Terjadi kesalahan pada server." });
   }
 };
+
+// =====================================================================
+// SECTION 3: PROGRESS MANAGEMENT
+// =====================================================================
+
 /**
  * @desc    Save or update user's test progress
- * @route   POST /api/results/progress
- * @access  Private
  */
 const saveProgress = async (req, res) => {
   try {
@@ -727,8 +646,6 @@ const saveProgress = async (req, res) => {
 
 /**
  * @desc    Get user's test progress
- * @route   GET /api/results/progress
- * @access  Private
  */
 const getProgress = async (req, res) => {
   try {
@@ -775,8 +692,6 @@ const getProgress = async (req, res) => {
 
 /**
  * @desc    Delete user's test progress
- * @route   DELETE /api/results/progress
- * @access  Private
  */
 const deleteProgress = async (req, res) => {
   try {
@@ -801,10 +716,12 @@ const deleteProgress = async (req, res) => {
   }
 };
 
+// =====================================================================
+// SECTION 4: RESULT RETRIEVAL & HISTORY
+// =====================================================================
+
 /**
  * @desc    Get latest result by topic for current user within a specific module
- * @route   GET /api/results/latest-by-topic
- * @access  Private
  */
 const getLatestResultByTopic = async (req, res) => {
   try {
@@ -844,8 +761,6 @@ const getLatestResultByTopic = async (req, res) => {
 
 /**
  * @desc    Get latest result by test type for the current user
- * @route   GET /api/results/latest-by-type/:testType
- * @access  Private
  */
 const getLatestResultByType = async (req, res) => {
   try {
@@ -900,8 +815,6 @@ const getLatestResultByType = async (req, res) => {
 
 /**
  * @desc    Delete a result by test type for the current user
- * @route   DELETE /api/results/by-type/:testType
- * @access  Private
  */
 const deleteResultByType = async (req, res) => {
   try {
@@ -940,8 +853,6 @@ const deleteResultByType = async (req, res) => {
 
 /**
  * @desc    Get all results
- * @route   GET /api/results
- * @access  Private (Admin)
  */
 const getResults = async (req, res) => {
   try {
@@ -955,8 +866,6 @@ const getResults = async (req, res) => {
 
 /**
  * @desc    Get results by user ID
- * @route   GET /api/results/user/:userId
- * @access  Private
  */
 const getResultsByUser = async (req, res) => {
   try {
@@ -968,10 +877,12 @@ const getResultsByUser = async (req, res) => {
   }
 };
 
+// =====================================================================
+// SECTION 5: ANALYTICS & DASHBOARD
+// =====================================================================
+
 /**
  * @desc    Get user's total study time
- * @route   GET /api/results/study-time
- * @access  Private
  */
 const getStudyTime = async (req, res) => {
   try {
@@ -997,8 +908,6 @@ const getStudyTime = async (req, res) => {
 
 /**
  * @desc    Get analytics data for the current user (average score, weakest topic)
- * @route   GET /api/results/analytics
- * @access  Private
  */
 const getAnalytics = async (req, res) => {
   try {
@@ -1153,8 +1062,6 @@ const getAnalytics = async (req, res) => {
 
 /**
  * @desc    Get user's daily study streak
- * @route   GET /api/results/streak
- * @access  Private
  */
 const getDailyStreak = async (req, res) => {
   try {
@@ -1200,8 +1107,6 @@ const getDailyStreak = async (req, res) => {
 
 /**
  * @desc    Get user's weekly study activity
- * @route   GET /api/results/weekly-activity
- * @access  Private
  */
 const getWeeklyActivity = async (req, res) => {
   try {
@@ -1249,8 +1154,6 @@ const getWeeklyActivity = async (req, res) => {
 
 /**
  * @desc    Get class average weekly study activity
- * @route   GET /api/results/class-weekly-activity
- * @access  Private
  */
 const getClassWeeklyActivity = async (req, res) => {
   try {
@@ -1306,8 +1209,6 @@ const getClassWeeklyActivity = async (req, res) => {
 
 /**
  * @desc    Get user's latest module post-test scores
- * @route   GET /api/results/module-scores
- * @access  Private
  */
 const getModuleScores = async (req, res) => {
   try {
@@ -1359,8 +1260,6 @@ const getModuleScores = async (req, res) => {
 
 /**
  * @desc    Get user vs class average comparison data for module post-tests
- * @route   GET /api/results/comparison-analytics
- * @access  Private
  */
 const getComparisonAnalytics = async (req, res) => {
   try {
@@ -1456,10 +1355,12 @@ const getComparisonAnalytics = async (req, res) => {
   }
 };
 
+// =====================================================================
+// SECTION 6: RECOMMENDATIONS & INSIGHTS
+// =====================================================================
+
 /**
  * @desc    Get learning recommendations for the user
- * @route   GET /api/results/recommendations
- * @access  Private
  */
 const getLearningRecommendations = async (req, res) => {
   try {
@@ -1613,8 +1514,6 @@ const getLearningRecommendations = async (req, res) => {
 
 /**
  * @desc    Get topics that need reinforcement for the user
- * @route   GET /api/results/topics-to-reinforce
- * @access  Private
  */
 const getTopicsToReinforce = async (req, res) => {
   try {
@@ -1698,8 +1597,6 @@ const hasCompletedModulePostTest = async (userId, modulId) => {
 
 /**
  * @desc    Get user's performance across all sub-topics
- * @route   GET /api/results/subtopic-performance
- * @access  Private
  */
 const getSubTopicPerformance = async (req, res) => {
   try {
@@ -1758,9 +1655,11 @@ const getSubTopicPerformance = async (req, res) => {
   }
 };
 
+// =====================================================================
+// SECTION 7: CERTIFICATE & MISC
+// =====================================================================
+
 // @desc    Generate a certificate for the logged-in user
-// @route   GET /api/results/certificate
-// @access  Private
 const generateCertificate = asyncHandler(async (req, res) => {
     const { name } = req.query; // Ambil nama dari query parameter
 
@@ -1818,8 +1717,6 @@ const generateCertificate = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get user's competency map from pre-test results
-// @route   GET /api/results/competency-map
-// @access  Private
 const getCompetencyMap = asyncHandler(async (req, res) => {  
   // 1. Ambil profil kompetensi pengguna dan buat peta skor
   const user = await User.findById(req.user._id).select('competencyProfile').lean();
@@ -1886,8 +1783,6 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
 });
 
 // @desc    Cek apakah user sudah mengerjakan Pre-Test
-// @route   GET /api/results/check-pre-test
-// @access  Private
 const checkPreTestStatus = async (req, res) => {
   try {
     // Mengambil ID user dari token (asumsi middleware auth menyimpan user di req.user)

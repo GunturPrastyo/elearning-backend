@@ -8,8 +8,6 @@ import path from "path";
 export const uploadImage = (req, res) => {
   if (req.file) {
     res.status(200).json({
-      // Ensure this URL matches how you serve static files
-      // In server.js, you use '/uploads', so the path will be like this
       imageUrl: `/uploads/${req.file.filename}`,
     });
   } else {

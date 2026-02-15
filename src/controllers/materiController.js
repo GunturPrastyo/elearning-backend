@@ -57,11 +57,9 @@ export const getMateriBySlugs = async (req, res) => {
     });
 
     if (!materi) {
-      // Ini bukan error, hanya saja materinya belum ada.
-      // Kirim 404 tapi sertakan ID yang dibutuhkan frontend untuk membuat materi baru.
       return res.status(404).json({
         message: "Materi belum dibuat",
-        topikId: topik._id, // Pastikan topikId selalu ada di response
+        topikId: topik._id, 
       });
     }
 

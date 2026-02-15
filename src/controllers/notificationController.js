@@ -1,5 +1,5 @@
 import Notification from "../models/Notification.js";
-import mongoose from "mongoose";
+
 
 /**
  * @desc    Get all notifications for the current user

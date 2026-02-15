@@ -1,8 +1,8 @@
 import Question from "../models/Question.js";
 import mongoose from "mongoose";
-import Modul from "../models/Modul.js"; // Impor model Modul
 
-// ✅ Create Multiple Questions
+
+// Create Multiple Questions
 export const createQuestion = async (req, res) => {
   try {
     const { modulId, topikId, questions, testType } = req.body;
@@ -39,7 +39,7 @@ export const createQuestion = async (req, res) => {
   }
 };
 
-// ✅ Get all Questions
+// Get all Questions
 export const getQuestions = async (req, res) => {
   try {
     const questions = await Question.find()
@@ -53,7 +53,7 @@ export const getQuestions = async (req, res) => {
   }
 };
 
-// ✅ Get Question by ID
+// Get Question by ID
 export const getQuestionById = async (req, res) => {
   try {
     const question = await Question.findById(req.params.id)
@@ -172,7 +172,7 @@ export const updatePostTestModulQuestions = async (req, res) => {
   }
 };
 
-// 🔹 Cek post-test berdasarkan modulId & topikId
+//  Cek post-test berdasarkan modulId & topikId
 export const checkPostTestByModulAndTopik = async (req, res) => {
   try {
     const { modulId, topikId } = req.params;
@@ -208,7 +208,7 @@ export const checkPostTestByModul = async (req, res) => {
 };
 
 
-// ✅ Update Question
+// Update Question
 export const updateQuestion = async (req, res) => {
   try {
     const { questions } = req.body;
@@ -239,7 +239,7 @@ export const updateQuestion = async (req, res) => {
   }
 };
 
-// ✅ Delete Question
+// Delete Question
 export const deleteQuestion = async (req, res) => {
   try {
     const deleted = await Question.findByIdAndDelete(req.params.id);
@@ -307,7 +307,7 @@ export const updatePostTestTopikQuestions = async (req, res) => {
 
     res.json({ message: "Post test topik diperbarui", data: inserted });
   } catch (err) {
-    console.error("❌ Gagal memperbarui post test topik:", err);
+    console.error(" Gagal memperbarui post test topik:", err);
     res.status(500).json({ message: "Gagal memperbarui post test topik." });
   }
 };

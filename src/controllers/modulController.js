@@ -38,10 +38,6 @@ export const getModulesWithProgress = async (req, res) => {
       return res.status(404).json({ message: "User tidak ditemukan" });
     }
 
-    const learningPath = user.learningLevel || 'Dasar'; // Default ke 'Dasar'
-    const categoryHierarchy = { 'mudah': 1, 'sedang': 2, 'sulit': 3 };
-    const userLevel = categoryHierarchy[learningPath.toLowerCase()] || 1;
-
     const modules = await Modul.find({}).sort({ order: 1 }).lean();
     const allTopics = await Topik.find({}).select('_id title slug modulId').sort({ order: 1 }).lean();
     const allQuestions = await Question.find({ testType: 'post-test-topik' }).select('topikId durationPerQuestion').lean();
