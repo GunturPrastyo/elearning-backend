@@ -49,6 +49,41 @@ const calculateFinalScoreDetails = (accuracyScore, timeTaken, totalDuration, ans
 };
 
 /**
+ * Helper untuk menghitung dan update streak user
+ */
+const updateUserStreak = async (userId) => {
+  try {
+    const results = await Result.find({ userId }).sort({ createdAt: "desc" });
+    let streak = 0;
+    if (results.length > 0) {
+      const uniqueDays = new Set();
+      results.forEach(result => {
+        const date = new Date(result.createdAt);
+        date.setHours(0, 0, 0, 0);
+        uniqueDays.add(date.getTime());
+      });
+      const sortedDays = Array.from(uniqueDays).sort((a, b) => b - a);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if (sortedDays[0] === today.getTime() || sortedDays[0] === yesterday.getTime()) {
+        streak = 1;
+        for (let i = 0; i < sortedDays.length - 1; i++) {
+          const diffTime = sortedDays[i] - sortedDays[i + 1];
+          if (Math.round(diffTime / (1000 * 60 * 60 * 24)) === 1) streak++;
+          else break;
+        }
+      }
+    }
+    await User.findByIdAndUpdate(userId, { dailyStreak: streak });
+  } catch (error) {
+    console.error("Error updating user streak:", error);
+  }
+};
+
+/**
  * Menganalisis kelemahan sub-topik (untuk post-test-topik) atau topik (untuk post-test-modul).
  */
 const analyzeWeaknesses = async (testType, questions, answers, topikId) => {
@@ -531,6 +566,9 @@ const submitTest = async (req, res) => {
       });
     }
 
+    // Update streak user setelah submit tes
+    await updateUserStreak(userId);
+
     res.status(201).json({
       message: "Jawaban berhasil disubmit.",
       // Pastikan data yang dikembalikan adalah objek biasa, bukan dokumen Mongoose
@@ -586,6 +624,10 @@ const logStudyTime = async (req, res) => {
     });
 
     await newResult.save();
+
+    // Update streak user setelah mencatat waktu belajar
+    await updateUserStreak(userId);
+
     res.status(201).json({ success: true, message: "Waktu belajar berhasil dicatat." });
   } catch (error) {
     console.error("Gagal mencatat waktu belajar:", error);
@@ -1655,6 +1697,27 @@ const getSubTopicPerformance = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get streak leaderboard
+ * @route   GET /api/results/streak-leaderboard
+ * @access  Private
+ */
+const getStreakLeaderboard = async (req, res) => {
+  try {
+    // Ambil top 10 user berdasarkan dailyStreak, urutkan descending
+    // Hanya ambil user yang memiliki streak > 0
+    const leaderboard = await User.find({ role: 'user', dailyStreak: { $gt: 0 } })
+      .sort({ dailyStreak: -1 })
+      .limit(10)
+      .select('name avatar dailyStreak');
+      
+    res.status(200).json(leaderboard);
+  } catch (error) {
+    console.error("Error fetching streak leaderboard:", error);
+    res.status(500).json({ message: "Terjadi kesalahan pada server." });
+  }
+};
+
 // =====================================================================
 // SECTION 7: CERTIFICATE & MISC
 // =====================================================================
@@ -1827,6 +1890,7 @@ export {
     getModuleScores, getComparisonAnalytics, getLearningRecommendations,
     getTopicsToReinforce, saveProgress, getProgress, getLatestResultByTopic,
     getLatestResultByType, deleteResultByType, deleteProgress, getCompetencyMap,
+    getStreakLeaderboard,
     hasCompletedModulePostTest,
     getSubTopicPerformance,
     generateCertificate, checkPreTestStatus,

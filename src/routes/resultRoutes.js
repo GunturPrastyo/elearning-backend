@@ -24,6 +24,7 @@ import {
     deleteProgress,
     getCompetencyMap,
     checkPreTestStatus,
+    getStreakLeaderboard,
  } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
@@ -41,6 +42,7 @@ router.route("/progress")
 
 router.route("/log-study-time").post(protect, logStudyTime);
 router.route("/study-time").get(protect, getStudyTime);
+router.route("/streak-leaderboard").get(protect, getStreakLeaderboard);
 router.route("/submit-test").post(protect, submitTest);
 router.route("/user/:userId").get(protect, getResultsByUser);
 
