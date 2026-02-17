@@ -437,14 +437,8 @@ const submitTest = async (req, res) => {
       // Ambil data hasil kalkulasi dari helper
       const { featureScoresByModule, calculatedFeatureScores, avgScoreDasar, avgScoreMenengah } = preTestData;
 
-      // --- Tentukan Level Belajar ---
-      if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) {
-        learningPathResult = "Lanjutan";
-      } else if (avgScoreDasar >= 75) {
-        learningPathResult = "Menengah";
-      } else {
-        learningPathResult = "Dasar";
-      }
+      // --- Tentukan Level Belajar (Menggunakan Logika Baru per Fitur) ---
+      // Logika lama berbasis rata-rata dihapus. Level akan dihitung ulang oleh recalculateUserLearningLevel di bawah.
 
       // --- Simpan Profil Kompetensi ke User ---
       const competencyProfileData = [];

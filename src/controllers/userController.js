@@ -24,51 +24,67 @@ export const recalculateUserLearningLevel = async (userId) => {
     select: 'group'
   }).lean();
 
-  if (!user || !user.competencyProfile || user.competencyProfile.length === 0) {
-    return "Dasar"; // Default level jika tidak ada profil kompetensi
+  if (!user) {
+    return "Dasar";
   }
 
-  // 1. Agregasi skor: Hitung rata-rata skor untuk setiap fitur unik.
-  const featureScoresMap = {}; // { featureId: { totalScore: number, count: number, group: string } }
+  // 1. Ambil semua fitur yang tersedia di sistem untuk referensi kelengkapan
+  const allFeatures = await Feature.find({}).lean();
 
-  user.competencyProfile.forEach(comp => {
-    if (comp.featureId) {
-      const featureIdStr = comp.featureId._id.toString();
-      if (!featureScoresMap[featureIdStr]) {
-        featureScoresMap[featureIdStr] = {
-          totalScore: 0,
-          count: 0,
-          group: comp.featureId.group
-        };
+  // 2. Hitung skor rata-rata user per fitur (karena satu fitur bisa ada di banyak modul)
+  const userFeatureScores = {}; // { featureId: score }
+
+  if (user.competencyProfile && user.competencyProfile.length > 0) {
+    const featureMap = {}; // { featureId: { total: 0, count: 0 } }
+    
+    user.competencyProfile.forEach(comp => {
+      if (comp.featureId) {
+        const fid = comp.featureId._id.toString();
+        if (!featureMap[fid]) featureMap[fid] = { total: 0, count: 0 };
+        featureMap[fid].total += comp.score;
+        featureMap[fid].count += 1;
       }
-      featureScoresMap[featureIdStr].totalScore += comp.score;
-      featureScoresMap[featureIdStr].count += 1;
-    }
-  });
+    });
 
-  const aggregatedScores = {};
-  Object.keys(featureScoresMap).forEach(fid => {
-    const data = featureScoresMap[fid];
-    aggregatedScores[fid] = {
-      score: data.count > 0 ? data.totalScore / data.count : 0,
-      group: data.group
-    };
-  });
+    Object.keys(featureMap).forEach(fid => {
+      userFeatureScores[fid] = featureMap[fid].total / featureMap[fid].count;
+    });
+  }
 
-  // 2. Kelompokkan skor agregat berdasarkan grupnya
-  const groupScores = { Dasar: [], Menengah: [], Lanjutan: [] };
-  Object.values(aggregatedScores).forEach(aggScore => {
-    const groupName = aggScore.group ? aggScore.group.charAt(0).toUpperCase() + aggScore.group.slice(1).toLowerCase() : 'Dasar';
-    if (groupScores[groupName]) groupScores[groupName].push(aggScore.score);
-  });
+  // 3. Fungsi helper untuk mengecek apakah SEMUA fitur dalam grup memenuhi threshold
+  const checkGroupPass = (groupName, threshold) => {
+    // Filter fitur sistem berdasarkan grup
+    const featuresInGroup = allFeatures.filter(f => {
+      const g = f.group ? f.group.charAt(0).toUpperCase() + f.group.slice(1).toLowerCase() : 'Dasar';
+      return g === groupName;
+    });
 
-  const calculateAverage = (scores) => scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-  const avgScoreDasar = calculateAverage(groupScores.Dasar);
-  const avgScoreMenengah = calculateAverage(groupScores.Menengah);
+    if (featuresInGroup.length === 0) return false;
 
-  // 3. Terapkan aturan penentuan level
-  if (avgScoreDasar >= 85 && avgScoreMenengah >= 75) return "Lanjutan";
-  if (avgScoreDasar >= 75) return "Menengah";
+    // Cek setiap fitur di grup tersebut
+    return featuresInGroup.every(f => {
+      const fid = f._id.toString();
+      const score = userFeatureScores[fid] || 0; // Jika user belum punya nilai, anggap 0
+      return score >= threshold;
+    });
+  };
+
+  // 4. Terapkan aturan penentuan level (Per Fitur)
+  // Syarat Lanjutan: Semua fitur Dasar >= 85 DAN Semua fitur Menengah >= 75
+  const passedDasarForLanjutan = checkGroupPass('Dasar', 85);
+  const passedMenengahForLanjutan = checkGroupPass('Menengah', 75);
+  
+  if (passedDasarForLanjutan && passedMenengahForLanjutan) {
+    return "Lanjutan";
+  }
+
+  // Syarat Menengah: Semua fitur Dasar >= 75
+  const passedDasarForMenengah = checkGroupPass('Dasar', 75);
+  
+  if (passedDasarForMenengah) {
+    return "Menengah";
+  }
+
   return "Dasar";
 };
 
