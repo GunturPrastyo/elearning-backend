@@ -5,6 +5,7 @@ import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 import Feature from "../models/Feature.js"; // Diperlukan untuk kalkulasi
+import Modul from "../models/Modul.js";
 
 import fs from "fs";
 import path from "path";
@@ -15,110 +16,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-// --- FUNGSI HELPER BARU UNTUK MENGHITUNG & UPDATE LEVEL BELAJAR ---
-export const recalculateUserLearningLevel = async (userId) => {
-  const user = await User.findById(userId).populate({
-    path: 'competencyProfile.featureId',
-    model: 'Feature',
-    select: 'group'
-  }).lean();
-
-  if (!user) {
-    return "Dasar";
-  }
-
-  // 1. Ambil semua fitur yang tersedia di sistem untuk referensi kelengkapan
-  const allFeatures = await Feature.find({}).lean();
-
-  // 2. Hitung skor rata-rata user per fitur (karena satu fitur bisa ada di banyak modul)
-  const userFeatureScores = {}; // { featureId: score }
-
-  if (user.competencyProfile && user.competencyProfile.length > 0) {
-    const featureMap = {}; // { featureId: { total: 0, count: 0 } }
-    
-    user.competencyProfile.forEach(comp => {
-      if (comp.featureId) {
-        const fid = comp.featureId._id.toString();
-        if (!featureMap[fid]) featureMap[fid] = { total: 0, count: 0 };
-        featureMap[fid].total += comp.score;
-        featureMap[fid].count += 1;
-      }
-    });
-
-    Object.keys(featureMap).forEach(fid => {
-      userFeatureScores[fid] = featureMap[fid].total / featureMap[fid].count;
-    });
-  }
-
-  // 3. Fungsi helper untuk mengecek apakah SEMUA fitur dalam grup memenuhi threshold
-  const checkGroupPass = (groupName, threshold) => {
-    // Filter fitur sistem berdasarkan grup
-    const featuresInGroup = allFeatures.filter(f => {
-      const g = f.group ? f.group.charAt(0).toUpperCase() + f.group.slice(1).toLowerCase() : 'Dasar';
-      return g === groupName;
-    });
-
-    if (featuresInGroup.length === 0) return false;
-
-    // Cek setiap fitur di grup tersebut
-    return featuresInGroup.every(f => {
-      const fid = f._id.toString();
-      const score = userFeatureScores[fid] || 0; // Jika user belum punya nilai, anggap 0
-      return score >= threshold;
-    });
-  };
-
-  // 4. Terapkan aturan penentuan level (Per Fitur)
-  // Syarat Lanjutan: Semua fitur Dasar >= 85 DAN Semua fitur Menengah >= 75
-  const passedDasarForLanjutan = checkGroupPass('Dasar', 85);
-  const passedMenengahForLanjutan = checkGroupPass('Menengah', 75);
-  
-  if (passedDasarForLanjutan && passedMenengahForLanjutan) {
-    return "Lanjutan";
-  }
-
-  // Syarat Menengah: Semua fitur Dasar >= 75
-  const passedDasarForMenengah = checkGroupPass('Dasar', 75);
-  
-  if (passedDasarForMenengah) {
-    return "Menengah";
-  }
-
-  return "Dasar";
-};
-
-// --- FUNGSI HELPER BARU UNTUK MENENTUKAN STATUS PENGUNCIAN MODUL ---
-export const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
-  // Jika level pengguna belum ditentukan (null/undefined/kosong), kunci semua modul.
-  if (!userLearningLevel) return true;
-
-  const level = userLearningLevel.charAt(0).toUpperCase() + userLearningLevel.slice(1).toLowerCase();
-  const category = moduleCategory ? moduleCategory.toLowerCase() : '';
-
-  // Normalisasi kategori modul agar mendukung 'mudah'/'dasar', 'sedang'/'menengah', dll.
-  const isDasar = ['dasar', 'mudah'].includes(category);
-  const isMenengah = ['menengah', 'sedang'].includes(category);
-
-  // Aturan 1: Jika level pengguna 'Lanjutan', semua modul terbuka.
-  if (level === 'Lanjutan' || level === 'Lanjut') {
-    return false;
-  }
-
-  // Aturan 2: Jika level pengguna 'Menengah', modul 'mudah' dan 'sedang' terbuka.
-  if (level === 'Menengah') {
-    // Modul terbuka jika kategorinya Dasar atau Menengah. Terkunci jika Lanjutan/Sulit.
-    return !(isDasar || isMenengah);
-  }
-
-  // Aturan 3: Jika level pengguna 'Dasar', hanya modul 'mudah' yang terbuka.
-  if (level === 'Dasar') {
-    // Modul terkunci jika kategorinya BUKAN Dasar.
-    return !isDasar;
-  }
-
-  return true; // Defaultnya, kunci modul jika ada level yang tidak dikenal.
-};
 
 // ========================= VERIFY EMAIL =========================
 export const verifyEmail = async (req, res) => {
@@ -732,27 +629,40 @@ export const getCompetencyProfile = async (req, res) => {
     // 1. Ambil profil kompetensi pengguna dan buat peta skor
     const user = await User.findById(userId).select('competencyProfile').lean();
     
-    // Agregasi skor: Hitung rata-rata skor untuk setiap fitur unik
-    const scoreMap = new Map();
-    const countMap = new Map();
+    // --- REVISI: Hitung Skor Berbobot (Weighted Average) ---
+    // Menggunakan logika yang sama dengan resultController agar skor akurat sesuai bobot modul
+    const allModules = await Modul.find().select('featureWeights').lean();
+    const userFeatureScores = {}; // Map: FeatureId -> Score
 
     if (user && user.competencyProfile) {
-      user.competencyProfile.forEach(comp => {
-        const featureId = comp.featureId.toString();
-        const currentTotal = scoreMap.get(featureId) || 0;
-        scoreMap.set(featureId, currentTotal + comp.score);
+      const featureMap = {}; // FeatureId -> { weightedSum: 0, totalWeight: 0 }
+
+      user.competencyProfile.forEach(cp => {
+        if (!cp.modulId || !cp.featureId) return;
         
-        const currentCount = countMap.get(featureId) || 0;
-        countMap.set(featureId, currentCount + 1);
+        const fid = cp.featureId.toString();
+        const mid = cp.modulId.toString();
+        const rawScore = cp.score;
+
+        const module = allModules.find(m => m._id.toString() === mid);
+        if (module && module.featureWeights) {
+          const fw = module.featureWeights.find(f => f.featureId.toString() === fid);
+          if (fw) {
+            const weight = fw.weight || 0;
+            if (!featureMap[fid]) featureMap[fid] = { weightedSum: 0, totalWeight: 0 };
+            featureMap[fid].weightedSum += rawScore * weight;
+            featureMap[fid].totalWeight += weight;
+          }
+        }
+      });
+
+      Object.keys(featureMap).forEach(fid => {
+        const data = featureMap[fid];
+        userFeatureScores[fid] = data.totalWeight > 0 ? data.weightedSum / data.totalWeight : 0;
       });
     }
-
-    // Convert sums to averages
-    for (const [featureId, total] of scoreMap.entries()) {
-        const count = countMap.get(featureId);
-        scoreMap.set(featureId, count > 0 ? total / count : 0);
-    }
-
+    // -------------------------------------------------------
+    
     // --- Calculate Class Averages ---
     const featureStats = await User.aggregate([
       { $unwind: "$competencyProfile" },
@@ -792,7 +702,7 @@ export const getCompetencyProfile = async (req, res) => {
       const featureIdStr = feature._id.toString();
       const featureData = {
         name: feature.name,
-        score: scoreMap.get(featureIdStr) || 0,
+        score: userFeatureScores[featureIdStr] || 0,
         average: Math.round(averageScoreMap.get(featureIdStr) || 0),
       };
       if (groupedFeatures[feature.group]) {

@@ -7,8 +7,7 @@ import Topik from "../models/Topik.js";
 import Materi from "../models/Materi.js";
 import Question from "../models/Question.js";
 import User from "../models/User.js";
-import { hasCompletedModulePostTest } from "./resultController.js"; // Impor fungsi helper dari resultController
-import { isModuleLockedForUser } from "./userController.js"; // Impor fungsi helper dari userController
+import { hasCompletedModulePostTest, isModuleLockedForUser } from "./resultController.js"; // Impor fungsi helper dari resultController
 
 export const getModules = async (req, res) => {
   try {

@@ -8,13 +8,52 @@ import Modul from "../models/Modul.js";
 import Topik from "../models/Topik.js";
 import Feature from "../models/Feature.js";
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { recalculateUserLearningLevel } from "./userController.js"; // Impor fungsi baru
 import path from 'path';
 import fs from 'fs';
 
 // =====================================================================
 // SECTION 1: INTERNAL HELPER FUNCTIONS (LOGIC & CALCULATION)
 // =====================================================================
+
+/**
+ * Helper untuk menghitung skor fitur berbobot (Weighted Average)
+ * Rumus: Sum(Skor Modul * Bobot Fitur) / Sum(Bobot Fitur)
+ */
+const calculateWeightedFeatureScores = async (userId) => {
+  const user = await User.findById(userId).select('competencyProfile').lean();
+  if (!user || !user.competencyProfile) return {};
+
+  const allModules = await Modul.find().select('featureWeights').lean();
+  
+  // Map: FeatureId -> { weightedSum: 0, totalWeight: 0 }
+  const featureMap = {};
+
+  user.competencyProfile.forEach(cp => {
+    if (!cp.modulId || !cp.featureId) return;
+    const fid = cp.featureId.toString();
+    const mid = cp.modulId.toString();
+    const rawScore = cp.score; // Skor mentah (0-100) dari modul tersebut
+
+    const module = allModules.find(m => m._id.toString() === mid);
+    if (module && module.featureWeights) {
+      const fw = module.featureWeights.find(f => f.featureId.toString() === fid);
+      if (fw) {
+        const weight = fw.weight || 0;
+        if (!featureMap[fid]) featureMap[fid] = { weightedSum: 0, totalWeight: 0 };
+        featureMap[fid].weightedSum += rawScore * weight;
+        featureMap[fid].totalWeight += weight;
+      }
+    }
+  });
+
+  const finalScores = {};
+  Object.keys(featureMap).forEach(fid => {
+    const data = featureMap[fid];
+    finalScores[fid] = data.totalWeight > 0 ? data.weightedSum / data.totalWeight : 0;
+  });
+  
+  return finalScores;
+};
 
 /**
  * Menghitung rincian skor berdasarkan 4 komponen: Akurasi, Waktu, Stabilitas, Fokus.
@@ -294,6 +333,87 @@ const processPreTestGlobal = async (questions, answers) => {
   };
 };
 
+/**
+ * Menghitung ulang level belajar user berdasarkan profil kompetensi saat ini.
+ */
+const recalculateUserLearningLevel = async (userId) => {
+  // 1. Hitung skor berbobot terbaru untuk setiap fitur
+  const userFeatureScores = await calculateWeightedFeatureScores(userId);
+
+  // 2. Ambil semua fitur yang tersedia di sistem untuk referensi kelengkapan
+  const allFeatures = await Feature.find({}).lean();
+
+  // 3. Fungsi helper untuk mengecek apakah SEMUA fitur dalam grup memenuhi threshold
+  const checkGroupPass = (groupName, threshold) => {
+    // Filter fitur sistem berdasarkan grup
+    const featuresInGroup = allFeatures.filter(f => {
+      const g = f.group ? f.group.charAt(0).toUpperCase() + f.group.slice(1).toLowerCase() : 'Dasar';
+      return g === groupName;
+    });
+
+    if (featuresInGroup.length === 0) return false;
+
+    // Cek setiap fitur di grup tersebut
+    return featuresInGroup.every(f => {
+      const fid = f._id.toString();
+      const score = userFeatureScores[fid] || 0; // Jika user belum punya nilai, anggap 0
+      return score >= threshold;
+    });
+  };
+
+  // 4. Terapkan aturan penentuan level (Per Fitur)
+  // Syarat Lanjutan: Semua fitur Dasar >= 85 DAN Semua fitur Menengah >= 75
+  const passedDasarForLanjutan = checkGroupPass('Dasar', 85);
+  const passedMenengahForLanjutan = checkGroupPass('Menengah', 75);
+  
+  if (passedDasarForLanjutan && passedMenengahForLanjutan) {
+    return "Lanjutan";
+  }
+
+  // Syarat Menengah: Semua fitur Dasar >= 75
+  const passedDasarForMenengah = checkGroupPass('Dasar', 75);
+  
+  if (passedDasarForMenengah) {
+    return "Menengah";
+  }
+
+  return "Dasar";
+};
+
+/**
+ * Menentukan apakah modul terkunci untuk user berdasarkan level belajar.
+ */
+const isModuleLockedForUser = (moduleCategory, userLearningLevel) => {
+  // Jika level pengguna belum ditentukan (null/undefined/kosong), kunci semua modul.
+  if (!userLearningLevel) return true;
+
+  const level = userLearningLevel.charAt(0).toUpperCase() + userLearningLevel.slice(1).toLowerCase();
+  const category = moduleCategory ? moduleCategory.toLowerCase() : '';
+
+  // Normalisasi kategori modul agar mendukung 'mudah'/'dasar', 'sedang'/'menengah', dll.
+  const isDasar = ['dasar', 'mudah'].includes(category);
+  const isMenengah = ['menengah', 'sedang'].includes(category);
+
+  // Aturan 1: Jika level pengguna 'Lanjutan', semua modul terbuka.
+  if (level === 'Lanjutan' || level === 'Lanjut') {
+    return false;
+  }
+
+  // Aturan 2: Jika level pengguna 'Menengah', modul 'mudah' dan 'sedang' terbuka.
+  if (level === 'Menengah') {
+    // Modul terbuka jika kategorinya Dasar atau Menengah. Terkunci jika Lanjutan/Sulit.
+    return !(isDasar || isMenengah);
+  }
+
+  // Aturan 3: Jika level pengguna 'Dasar', hanya modul 'mudah' yang terbuka.
+  if (level === 'Dasar') {
+    // Modul terkunci jika kategorinya BUKAN Dasar.
+    return !isDasar;
+  }
+
+  return true; // Defaultnya, kunci modul jika ada level yang tidak dikenal.
+};
+
 // =====================================================================
 // SECTION 2: CORE TEST OPERATIONS (CREATE & SUBMIT)
 // =====================================================================
@@ -472,13 +592,14 @@ const submitTest = async (req, res) => {
       // Logika lama berbasis rata-rata dihapus. Level akan dihitung ulang oleh recalculateUserLearningLevel di bawah.
 
       // --- Simpan Profil Kompetensi ke User ---
+      // REVISI: Simpan skor mentah (Raw Score) per modul agar bisa dihitung ulang bobotnya nanti
       const competencyProfileData = [];
-      featureScoresByModule.forEach(modul => {
-        modul.features.forEach(feature => {
+      featureScoresByModule.forEach(mod => {
+        mod.features.forEach(feat => {
           competencyProfileData.push({
-            modulId: new mongoose.Types.ObjectId(modul.moduleId),
-            featureId: new mongoose.Types.ObjectId(feature.featureId),
-            score: feature.score
+            featureId: new mongoose.Types.ObjectId(feat.featureId),
+            modulId: new mongoose.Types.ObjectId(mod.moduleId),
+            score: feat.score // Skor mentah (0-100) untuk fitur ini di modul ini
           });
         });
       });
@@ -487,9 +608,11 @@ const submitTest = async (req, res) => {
       user.competencyProfile = competencyProfileData;
       await user.save();
 
-      user.learningLevel = learningLevel; // Gunakan level yang dihitung dengan formula global
+      // Hitung ulang level berdasarkan profil yang baru disimpan agar konsisten
+      const newLearningLevel = await recalculateUserLearningLevel(userId);
+      user.learningLevel = newLearningLevel;
       await user.save();
-      learningPathResult = user.learningLevel; // Gunakan level yang baru dihitung untuk respons
+      learningPathResult = newLearningLevel;
 
       result = await Result.findOneAndUpdate(
         { userId, testType: "pre-test-global" },
@@ -534,75 +657,81 @@ const submitTest = async (req, res) => {
       console.log(`[DEBUG] Memulai update kompetensi untuk user: ${userId} dari modul: ${modulId}`);
 
       // 1. Ambil bobot fitur dari modul yang sedang dites
-      const modul = await Modul.findById(modulId).select('featureWeights').populate('featureWeights.featureId', 'name group').lean();
-      if (!modul || !modul.featureWeights) {
-        throw new Error("Bobot fitur untuk modul ini tidak ditemukan.");
-      }
-
-      // 2. Hitung skor baru untuk setiap fitur berdasarkan: Skor Akhir Tes * Bobot Fitur
-      // Gunakan `bestScore` untuk memastikan skor tertinggi yang digunakan untuk update.
-      const newCompetencyDataForModule = modul.featureWeights.map(fw => {
-        const featureScore = parseFloat((bestScore * (fw.weight || 0)).toFixed(2));
-        return {
-          featureId: new mongoose.Types.ObjectId(fw.featureId._id),
-          modulId: new mongoose.Types.ObjectId(modulId),
-          score: featureScore,
-        };
-      });
-
-      // 3. Update profil kompetensi pengguna
-      const userToSave = await User.findById(userId);
+      const modul = await Modul.findById(modulId).select('featureWeights title').populate('featureWeights.featureId', 'name group').lean();
       
-      // --- Capture old scores for comparison ---
-      const oldCompetencyMap = new Map();
-      if (userToSave.competencyProfile) {
-          userToSave.competencyProfile.forEach(cp => {
-              if (cp.modulId && cp.modulId.toString() === modulId.toString()) {
-                  oldCompetencyMap.set(cp.featureId.toString(), cp.score);
-              }
-          });
-      }
+      // Validasi: Lanjutkan hanya jika modul dan featureWeights ada
+      if (modul && modul.featureWeights) {
+          const userToSave = await User.findById(userId);
+          if (userToSave) {
+              // Hitung skor fitur SEBELUM update (untuk laporan diff)
+              const scoresBefore = await calculateWeightedFeatureScores(userId);
 
-      // Hapus entri lama untuk modul ini
-      const otherModulesProfile = userToSave.competencyProfile.filter(
-        comp => comp.modulId.toString() !== modulId
-      );
-      // Gabungkan dengan data baru
-      userToSave.competencyProfile = [...otherModulesProfile, ...newCompetencyDataForModule];
-      await userToSave.save();
+              // 2. Update profil kompetensi pengguna dengan skor mentah (Raw Score)
+              // Gunakan `bestScore` (0-100) sebagai skor mentah untuk modul ini
+              let profile = userToSave.competencyProfile || [];
 
-      // --- Calculate updates ---
-      newCompetencyDataForModule.forEach(newCp => {
-          const featureIdStr = newCp.featureId.toString();
-          const oldScore = oldCompetencyMap.get(featureIdStr) || 0;
-          const newScore = newCp.score;
-          
-          if (newScore > oldScore) {
-              const featureObj = modul.featureWeights.find(fw => fw.featureId._id.toString() === featureIdStr);
-              const featureName = featureObj ? featureObj.featureId.name : 'Unknown Feature';
-              const featureWeight = featureObj ? featureObj.weight : 0;
-              const maxPossibleScore = 100 * featureWeight;
-              
-              competencyUpdates.push({
-                  featureName,
-                  oldScore,
-                  newScore,
-                  diff: parseFloat((newScore - oldScore).toFixed(2)),
-                  // Hitung persentase peningkatan terhadap total bobot fitur di modul ini
-                  percentIncrease: maxPossibleScore > 0 ? Math.round(((newScore - oldScore) / maxPossibleScore) * 100) : 0
+              modul.featureWeights.forEach(fw => {
+                if (fw.featureId && fw.featureId._id) {
+                  const fid = fw.featureId._id.toString();
+                  // Cari entri yang sudah ada untuk modul & fitur ini
+                  const existingIndex = profile.findIndex(cp => 
+                    cp.modulId && cp.modulId.toString() === modulId && cp.featureId.toString() === fid
+                  );
+
+                  if (existingIndex > -1) {
+                    // Update hanya jika skor baru lebih tinggi (Max Strategy)
+                    profile[existingIndex].score = Math.max(profile[existingIndex].score, bestScore);
+                  } else {
+                    // Tambahkan entri baru jika belum ada
+                    profile.push({
+                      featureId: fw.featureId._id,
+                      modulId: new mongoose.Types.ObjectId(modulId),
+                      score: bestScore
+                    });
+                  }
+                }
               });
+              
+              userToSave.competencyProfile = profile;
+              await userToSave.save();
+
+              // Hitung skor fitur SETELAH update
+              const scoresAfter = await calculateWeightedFeatureScores(userId);
+
+              // --- Calculate updates for response ---
+              Object.keys(scoresAfter).forEach(fid => {
+                  const oldScore = scoresBefore[fid] || 0;
+                  const newScore = scoresAfter[fid];
+                  
+                  if (newScore > oldScore) {
+                      // Cari nama fitur
+                      const featureObj = modul.featureWeights.find(fw => fw.featureId && fw.featureId._id.toString() === fid);
+                      const featureName = featureObj && featureObj.featureId ? featureObj.featureId.name : 'Unknown Feature';
+                      
+                      competencyUpdates.push({
+                          featureName,
+                          oldScore,
+                          newScore,
+                          diff: parseFloat((newScore - oldScore).toFixed(2)),
+                          // Hitung persentase peningkatan relatif terhadap skor lama
+                          percentIncrease: oldScore > 0 ? Math.round(((newScore - oldScore) / oldScore) * 100) : 100
+                      });
+                  }
+              });
+
+              console.log(`[DEBUG] Profil kompetensi untuk modul ${modulId} telah diperbarui.`);
+
+              // 4. Hitung ulang level belajar berdasarkan profil kompetensi yang baru dan simpan
+              const newLearningLevel = await recalculateUserLearningLevel(userId);
+              userToSave.learningLevel = newLearningLevel;
+              await userToSave.save();
+              learningPathResult = newLearningLevel; // Simpan untuk dikirim di respons
+
+              console.log(`[DEBUG] Profil kompetensi dan level belajar user ${userId} telah diperbarui. Level baru: ${newLearningLevel}`);
           }
-      });
-
-      console.log(`[DEBUG] Profil kompetensi untuk modul ${modulId} telah diperbarui.`);
-
-      // 4. Hitung ulang level belajar berdasarkan profil kompetensi yang baru dan simpan
-      const newLearningLevel = await recalculateUserLearningLevel(userId);
-      userToSave.learningLevel = newLearningLevel;
-      await userToSave.save();
-      learningPathResult = newLearningLevel; // Simpan untuk dikirim di respons
-
-      console.log(`[DEBUG] Profil kompetensi dan level belajar user ${userId} telah diperbarui. Level baru: ${newLearningLevel}`);
+      } else {
+          console.warn(`[WARNING] Modul ${modulId} tidak memiliki featureWeights atau tidak ditemukan. Kompetensi tidak diperbarui.`);
+      }
       // --- END: Logika Pembaruan Kompetensi ---
     } else {
       // Untuk tipe tes lain (misalnya pre-test), selalu buat hasil baru.
@@ -1854,27 +1983,8 @@ const generateCertificate = asyncHandler(async (req, res) => {
 
 // @desc    Get user's competency map from pre-test results
 const getCompetencyMap = asyncHandler(async (req, res) => {  
-  // 1. Ambil profil kompetensi pengguna dan buat peta skor
-  const user = await User.findById(req.user._id).select('competencyProfile').lean();
-  const scoreMap = new Map();
-  const countMap = new Map();
-
-  if (user && user.competencyProfile) {
-    user.competencyProfile.forEach(comp => {
-      const featureId = comp.featureId.toString();
-      const currentTotal = scoreMap.get(featureId) || 0;
-      scoreMap.set(featureId, currentTotal + comp.score);
-      
-      const currentCount = countMap.get(featureId) || 0;
-      countMap.set(featureId, currentCount + 1);
-    });
-  }
-
-  // Convert to averages
-  for (const [fid, total] of scoreMap.entries()) {
-      const count = countMap.get(fid);
-      scoreMap.set(fid, count > 0 ? total / count : 0);
-  }
+  // 1. Hitung skor kompetensi pengguna menggunakan Weighted Average
+  const userFeatureScores = await calculateWeightedFeatureScores(req.user._id);
 
   // --- Calculate Class Averages ---
   const allUsers = await User.find({ role: 'user' }).select('competencyProfile').lean();
@@ -1920,7 +2030,7 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
 
     const featureData = {
       name: feature.name,
-      score: scoreMap.get(fid) || 0,
+      score: userFeatureScores[fid] || 0, // Gunakan skor berbobot yang sudah dihitung
       average: average,
     };
     if (groupedFeatures[feature.group]) {
@@ -1979,5 +2089,7 @@ export {
     getStreakLeaderboard,
     hasCompletedModulePostTest,
     getSubTopicPerformance,
-    generateCertificate, checkPreTestStatus,
+    generateCertificate, checkPreTestStatus, 
+    recalculateUserLearningLevel, // Ekspor fungsi ini
+    isModuleLockedForUser, // Ekspor fungsi ini
 };
