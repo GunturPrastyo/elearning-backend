@@ -28,18 +28,31 @@ export const recalculateUserLearningLevel = async (userId) => {
     return "Dasar"; // Default level jika tidak ada profil kompetensi
   }
 
-  // 1. Agregasi skor: Ambil skor tertinggi untuk setiap fitur unik.
-  const aggregatedScores = {}; // { featureId: { score: number, group: string } }
+  // 1. Agregasi skor: Hitung rata-rata skor untuk setiap fitur unik.
+  const featureScoresMap = {}; // { featureId: { totalScore: number, count: number, group: string } }
+
   user.competencyProfile.forEach(comp => {
     if (comp.featureId) {
       const featureIdStr = comp.featureId._id.toString();
-      if (!aggregatedScores[featureIdStr] || comp.score > aggregatedScores[featureIdStr].score) {
-        aggregatedScores[featureIdStr] = {
-          score: comp.score,
+      if (!featureScoresMap[featureIdStr]) {
+        featureScoresMap[featureIdStr] = {
+          totalScore: 0,
+          count: 0,
           group: comp.featureId.group
         };
       }
+      featureScoresMap[featureIdStr].totalScore += comp.score;
+      featureScoresMap[featureIdStr].count += 1;
     }
+  });
+
+  const aggregatedScores = {};
+  Object.keys(featureScoresMap).forEach(fid => {
+    const data = featureScoresMap[fid];
+    aggregatedScores[fid] = {
+      score: data.count > 0 ? data.totalScore / data.count : 0,
+      group: data.group
+    };
   });
 
   // 2. Kelompokkan skor agregat berdasarkan grupnya
@@ -703,16 +716,25 @@ export const getCompetencyProfile = async (req, res) => {
     // 1. Ambil profil kompetensi pengguna dan buat peta skor
     const user = await User.findById(userId).select('competencyProfile').lean();
     
-    // Agregasi skor: Ambil skor tertinggi untuk setiap fitur unik
+    // Agregasi skor: Hitung rata-rata skor untuk setiap fitur unik
     const scoreMap = new Map();
+    const countMap = new Map();
+
     if (user && user.competencyProfile) {
       user.competencyProfile.forEach(comp => {
         const featureId = comp.featureId.toString();
-        const currentScore = scoreMap.get(featureId) || 0;
-        if (comp.score > currentScore) {
-          scoreMap.set(featureId, comp.score);
-        }
+        const currentTotal = scoreMap.get(featureId) || 0;
+        scoreMap.set(featureId, currentTotal + comp.score);
+        
+        const currentCount = countMap.get(featureId) || 0;
+        countMap.set(featureId, currentCount + 1);
       });
+    }
+
+    // Convert sums to averages
+    for (const [featureId, total] of scoreMap.entries()) {
+        const count = countMap.get(featureId);
+        scoreMap.set(featureId, count > 0 ? total / count : 0);
     }
 
     // --- Calculate Class Averages ---
@@ -721,13 +743,13 @@ export const getCompetencyProfile = async (req, res) => {
       {
         $group: {
           _id: { userId: "$_id", featureId: "$competencyProfile.featureId" },
-          maxScore: { $max: "$competencyProfile.score" }
+          avgScore: { $avg: "$competencyProfile.score" }
         }
       },
       {
         $group: {
           _id: "$_id.featureId",
-          averageScore: { $avg: "$maxScore" }
+          averageScore: { $avg: "$avgScore" }
         }
       }
     ]);

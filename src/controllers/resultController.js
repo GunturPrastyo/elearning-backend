@@ -387,6 +387,8 @@ const submitTest = async (req, res) => {
     let result;
     let bestScore = finalScore; // Inisialisasi skor akhir dengan skor saat ini
     let learningPathResult = null;
+    let previousBestScore = null;
+    let competencyUpdates = []; // Inisialisasi di scope luar agar bisa diakses di response
 
     // Logika untuk mengambil nilai terbaik pada post-test topik
     if (testType === "post-test-topik") {
@@ -394,6 +396,10 @@ const submitTest = async (req, res) => {
       const existingResult = await Result.findOne({ userId, topikId, testType: "post-test-topik" });
 
       // 2. Bandingkan skor. Hanya update jika tidak ada hasil atau skor baru lebih tinggi.
+      if (existingResult) {
+        previousBestScore = existingResult.score;
+      }
+
       if (!existingResult || finalScore > existingResult.score) {
         // Jika skor baru lebih baik, perbarui/buat data baru
         result = await Result.findOneAndUpdate(
@@ -423,6 +429,9 @@ const submitTest = async (req, res) => {
       }
     } else if (testType === "pre-test-global") {
       const existingResult = await Result.findOne({ userId, testType });
+      if (existingResult) {
+        previousBestScore = existingResult.score;
+      }
       console.log(`[DEBUG] Memproses pre-test-global untuk user: ${userId}`);
       
       // Ambil data hasil kalkulasi dari helper
@@ -470,6 +479,9 @@ const submitTest = async (req, res) => {
     } else if (testType === "post-test-modul") {
       const objectModulId = new mongoose.Types.ObjectId(modulId);
       const existingResult = await Result.findOne({ userId, modulId: objectModulId, testType });
+      if (existingResult) {
+        previousBestScore = existingResult.score;
+      }
 
       if (!existingResult || finalScore > existingResult.score) {
         result = await Result.findOneAndUpdate(
@@ -515,6 +527,17 @@ const submitTest = async (req, res) => {
 
       // 3. Update profil kompetensi pengguna
       const userToSave = await User.findById(userId);
+      
+      // --- Capture old scores for comparison ---
+      const oldCompetencyMap = new Map();
+      if (userToSave.competencyProfile) {
+          userToSave.competencyProfile.forEach(cp => {
+              if (cp.modulId && cp.modulId.toString() === modulId.toString()) {
+                  oldCompetencyMap.set(cp.featureId.toString(), cp.score);
+              }
+          });
+      }
+
       // Hapus entri lama untuk modul ini
       const otherModulesProfile = userToSave.competencyProfile.filter(
         comp => comp.modulId.toString() !== modulId
@@ -522,6 +545,29 @@ const submitTest = async (req, res) => {
       // Gabungkan dengan data baru
       userToSave.competencyProfile = [...otherModulesProfile, ...newCompetencyDataForModule];
       await userToSave.save();
+
+      // --- Calculate updates ---
+      newCompetencyDataForModule.forEach(newCp => {
+          const featureIdStr = newCp.featureId.toString();
+          const oldScore = oldCompetencyMap.get(featureIdStr) || 0;
+          const newScore = newCp.score;
+          
+          if (newScore > oldScore) {
+              const featureObj = modul.featureWeights.find(fw => fw.featureId._id.toString() === featureIdStr);
+              const featureName = featureObj ? featureObj.featureId.name : 'Unknown Feature';
+              const featureWeight = featureObj ? featureObj.weight : 0;
+              const maxPossibleScore = 100 * featureWeight;
+              
+              competencyUpdates.push({
+                  featureName,
+                  oldScore,
+                  newScore,
+                  diff: parseFloat((newScore - oldScore).toFixed(2)),
+                  // Hitung persentase peningkatan terhadap total bobot fitur di modul ini
+                  percentIncrease: maxPossibleScore > 0 ? Math.round(((newScore - oldScore) / maxPossibleScore) * 100) : 0
+              });
+          }
+      });
 
       console.log(`[DEBUG] Profil kompetensi untuk modul ${modulId} telah diperbarui.`);
 
@@ -581,9 +627,11 @@ const submitTest = async (req, res) => {
         correct: correctAnswers, // PERBAIKAN: Paksa kirim jumlah benar dari percobaan SAAT INI
         total: totalQuestions,   // PERBAIKAN: Paksa kirim total soal dari percobaan SAAT INI
         bestScore: bestScore, // Kirim juga skor terbaik untuk perbandingan/update di frontend.
+        previousBestScore, // Kirim skor terbaik sebelumnya untuk notifikasi kenaikan nilai
         learningPath: learningPathResult, // Kirim hasil penentuan level
         scoreDetails, // Feedback rincian skor dari pengerjaan saat ini
         // DEBUG: Kirim rincian skor fitur untuk debugging di frontend
+        competencyUpdates, // Kirim detail peningkatan kompetensi
         ...(testType === "pre-test-global" && {
           featureScores: preTestData.calculatedFeatureScores,
           avgScoreDasar: preTestData.avgScoreDasar,
@@ -721,8 +769,8 @@ const getProgress = async (req, res) => {
     const progress = await Result.findOne(query);
 
     if (!progress) {
-      // Ini bukan error, hanya berarti tidak ada progress. Kirim 404 agar frontend tahu.
-      return res.status(404).json({ message: "Progress tidak ditemukan." });
+      // Kembalikan null dengan status 200 agar tidak memicu error console di frontend
+      return res.status(200).json(null);
     }
 
     res.status(200).json(progress);
@@ -1784,33 +1832,46 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
   // 1. Ambil profil kompetensi pengguna dan buat peta skor
   const user = await User.findById(req.user._id).select('competencyProfile').lean();
   const scoreMap = new Map();
+  const countMap = new Map();
+
   if (user && user.competencyProfile) {
     user.competencyProfile.forEach(comp => {
       const featureId = comp.featureId.toString();
-      const currentScore = scoreMap.get(featureId) || 0;
-      if (comp.score > currentScore) {
-        scoreMap.set(featureId, comp.score);
-      }
+      const currentTotal = scoreMap.get(featureId) || 0;
+      scoreMap.set(featureId, currentTotal + comp.score);
+      
+      const currentCount = countMap.get(featureId) || 0;
+      countMap.set(featureId, currentCount + 1);
     });
+  }
+
+  // Convert to averages
+  for (const [fid, total] of scoreMap.entries()) {
+      const count = countMap.get(fid);
+      scoreMap.set(fid, count > 0 ? total / count : 0);
   }
 
   // --- Calculate Class Averages ---
   const allUsers = await User.find({ role: 'user' }).select('competencyProfile').lean();
   const featureTotalScoreMap = new Map();
-  const featureCountMap = new Map();
+  const featureUserCountMap = new Map();
 
   allUsers.forEach(u => {
     if (u.competencyProfile && Array.isArray(u.competencyProfile)) {
-      const userFeatureMaxScores = new Map();
+      const userFeatureAvgScores = new Map();
+      const userFeatureCounts = new Map();
+
       u.competencyProfile.forEach(comp => {
         const fid = comp.featureId.toString();
-        const current = userFeatureMaxScores.get(fid) || 0;
-        if (comp.score > current) userFeatureMaxScores.set(fid, comp.score);
+        userFeatureAvgScores.set(fid, (userFeatureAvgScores.get(fid) || 0) + comp.score);
+        userFeatureCounts.set(fid, (userFeatureCounts.get(fid) || 0) + 1);
       });
 
-      userFeatureMaxScores.forEach((score, fid) => {
-        featureTotalScoreMap.set(fid, (featureTotalScoreMap.get(fid) || 0) + score);
-        featureCountMap.set(fid, (featureCountMap.get(fid) || 0) + 1);
+      userFeatureAvgScores.forEach((total, fid) => {
+        const count = userFeatureCounts.get(fid);
+        const avg = count > 0 ? total / count : 0;
+        featureTotalScoreMap.set(fid, (featureTotalScoreMap.get(fid) || 0) + avg);
+        featureUserCountMap.set(fid, (featureUserCountMap.get(fid) || 0) + 1);
       });
     }
   });
@@ -1828,7 +1889,7 @@ const getCompetencyMap = asyncHandler(async (req, res) => {
   // 4. Kelompokkan fitur dan tambahkan skor pengguna
   allFeatures.forEach(feature => {
     const fid = feature._id.toString();
-    const count = featureCountMap.get(fid) || 0;
+    const count = featureUserCountMap.get(fid) || 0;
     const total = featureTotalScoreMap.get(fid) || 0;
     const average = count > 0 ? Math.round(total / count) : 0;
 
