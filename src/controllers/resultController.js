@@ -210,7 +210,7 @@ const processPreTestGlobal = async (questions, answers) => {
       if (isCorrect) {
         for (const featureIdStr in moduleFeatureScores[moduleIdStr].features) {
           const featureData = moduleFeatureScores[moduleIdStr].features[featureIdStr];
-          featureData.accumulatedWeightedScore += (100 * featureData.weight);
+          featureData.accumulatedWeightedScore += 100; // Simpan akurasi (0-100) tanpa bobot untuk competencyProfile
         }
       }
     }
@@ -254,12 +254,43 @@ const processPreTestGlobal = async (questions, answers) => {
   const avgScoreDasar = calculateAverage(groupScores.Dasar);
   const avgScoreMenengah = calculateAverage(groupScores.Menengah);
 
+  // --- LOGIKA PENENTUAN LEVEL (Berdasarkan Formula Global) ---
+  const checkGroupPass = (groupName, threshold) => {
+    const featuresInGroup = allFeatures.filter(f => {
+      const g = f.group ? f.group.charAt(0).toUpperCase() + f.group.slice(1).toLowerCase() : 'Dasar';
+      return g === groupName;
+    });
+
+    if (featuresInGroup.length === 0) return false;
+
+    return featuresInGroup.every(f => {
+      const fid = f._id.toString();
+      const featureScoreObj = calculatedFeatureScores.find(cfs => cfs.featureId === fid);
+      const score = featureScoreObj ? featureScoreObj.score : 0;
+      return score >= threshold;
+    });
+  };
+
+  let learningLevel = "Dasar";
+  const passedDasarForLanjutan = checkGroupPass('Dasar', 85);
+  const passedMenengahForLanjutan = checkGroupPass('Menengah', 75);
+  
+  if (passedDasarForLanjutan && passedMenengahForLanjutan) {
+    learningLevel = "Lanjutan";
+  } else {
+    const passedDasarForMenengah = checkGroupPass('Dasar', 75);
+    if (passedDasarForMenengah) {
+      learningLevel = "Menengah";
+    }
+  }
+
   return {
     accuracyScore,
     featureScoresByModule,
     calculatedFeatureScores,
     avgScoreDasar,
-    avgScoreMenengah
+    avgScoreMenengah,
+    learningLevel
   };
 };
 
@@ -435,7 +466,7 @@ const submitTest = async (req, res) => {
       console.log(`[DEBUG] Memproses pre-test-global untuk user: ${userId}`);
       
       // Ambil data hasil kalkulasi dari helper
-      const { featureScoresByModule, calculatedFeatureScores, avgScoreDasar, avgScoreMenengah } = preTestData;
+      const { featureScoresByModule, calculatedFeatureScores, avgScoreDasar, avgScoreMenengah, learningLevel } = preTestData;
 
       // --- Tentukan Level Belajar (Menggunakan Logika Baru per Fitur) ---
       // Logika lama berbasis rata-rata dihapus. Level akan dihitung ulang oleh recalculateUserLearningLevel di bawah.
@@ -456,7 +487,7 @@ const submitTest = async (req, res) => {
       user.competencyProfile = competencyProfileData;
       await user.save();
 
-      user.learningLevel = await recalculateUserLearningLevel(userId);
+      user.learningLevel = learningLevel; // Gunakan level yang dihitung dengan formula global
       await user.save();
       learningPathResult = user.learningLevel; // Gunakan level yang baru dihitung untuk respons
 
