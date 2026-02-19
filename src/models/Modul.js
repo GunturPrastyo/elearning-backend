@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-// Skema untuk menyimpan bobot setiap fitur dalam sebuah modul
 const featureWeightSchema = new mongoose.Schema(
   {
     featureId: {
@@ -9,7 +8,7 @@ const featureWeightSchema = new mongoose.Schema(
     },
     weight: { type: Number, default: 0, min: 0, max: 1 },
   },
-  { _id: false } // Tidak perlu _id untuk setiap item dalam array
+  { _id: false } 
 );
 
 const modulSchema = new mongoose.Schema(
@@ -20,7 +19,7 @@ const modulSchema = new mongoose.Schema(
     overview: { type: String, required: true },
     slug: { type: String, required: true, unique: true },
     order: { type: Number, default: 0, index: true },
-    featureWeights: { type: [featureWeightSchema], default: [] }, // Mengganti 'features'
+    featureWeights: { type: [featureWeightSchema], default: [] }, 
   },
   { timestamps: true }
 );

@@ -28,7 +28,7 @@ router.post("/verify-email", verifyEmail); // Rute verifikasi email
 router.post("/login", loginUser);
 router.post("/forgot-password", forgotPassword); // Rute baru
 router.put("/reset-password/:token", resetPassword); // Rute reset password
-router.post("/google-auth", googleAuth); // Menggunakan rute dan controller terpadu
+router.post("/google-auth", googleAuth); 
 router.post("/logout", logoutUser);
 
 // Rute Profil Pengguna (Dilindungi)

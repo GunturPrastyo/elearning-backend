@@ -384,7 +384,7 @@ export const getAdminAnalytics = async (req, res) => {
               0
             ]
           },
-          // Kalkulasi Skor Berbobot (sama seperti modul)
+         
           scorePoints: { $switch: { branches: [ { case: { $lt: ["$averageScore", 65] }, then: 2 }, { case: { $lt: ["$averageScore", 80] }, then: 1 }, ], default: 0 } },
           timePoints: { $switch: { branches: [ { case: { $gt: ["$averageTime", overallAverageTime * 1.4] }, then: 2 }, { case: { $gt: ["$averageTime", overallAverageTime * 1.1] }, then: 1 }, ], default: 0 } },
         }
@@ -417,10 +417,10 @@ export const getAdminAnalytics = async (req, res) => {
       activeUsers,
       onlineUsers,
       weakestTopicOverall,
-      moduleLearningSpeed, // Tambahkan data baru ke respons
+      moduleLearningSpeed, 
       moduleScoreDistribution,
       moduleAnalytics,
-      topicAnalytics, // Tambahkan data analitik topik
+      topicAnalytics, 
     });
 
   } catch (error) {
@@ -445,7 +445,7 @@ export const getUsersList = async (req, res) => {
           localField: '_id',
           foreignField: 'userId',
           pipeline: [
-            // Hanya ambil nilai dari post-test topik dan modul
+           
             { $match: { testType: { $in: ['post-test-topik', 'post-test-modul'] } } },
             { $project: { score: 1 } }
           ],
@@ -458,7 +458,7 @@ export const getUsersList = async (req, res) => {
             $cond: {
               if: { $gt: [{ $size: "$scores" }, 0] },
               then: { $avg: "$scores.score" },
-              else: 0 // Jika belum ada nilai, anggap 0
+              else: 0 
             }
           }
         }
@@ -471,7 +471,6 @@ export const getUsersList = async (req, res) => {
           averageScore: { $round: ["$averageScore", 1] }
         }
       },
-      // Default sort: Nilai terendah ke tertinggi (Ascending)
       { $sort: { averageScore: 1 } }
     ]);
 
@@ -490,7 +489,7 @@ export const getUsersList = async (req, res) => {
 export const getModuleLeaderboard = async (req, res) => {
   try {
     const leaderboard = await Modul.aggregate([
-      { $sort: { order: 1, title: 1 } }, // Urutkan modul berdasarkan urutan/judul
+      { $sort: { order: 1, title: 1 } }, 
       {
         $lookup: {
           from: "results",
@@ -501,12 +500,12 @@ export const getModuleLeaderboard = async (req, res) => {
                 $expr: {
                   $and: [
                     { $eq: ["$modulId", "$$modulId"] },
-                    { $eq: ["$testType", "post-test-modul"] } // Hanya ambil nilai Post-Test Akhir Modul
+                    { $eq: ["$testType", "post-test-modul"] } 
                   ]
                 }
               }
             },
-            // Lookup ke user untuk mendapatkan nama dan kelas
+        
             {
               $lookup: {
                 from: "users",
@@ -516,17 +515,17 @@ export const getModuleLeaderboard = async (req, res) => {
               }
             },
             { $unwind: "$user" },
-            { $match: { "user.role": "user" } }, // Hanya ambil siswa (bukan admin)
+            { $match: { "user.role": "user" } }, 
             {
               $project: {
                 _id: 0,
                 userId: "$user._id",
                 name: "$user.name",
                 kelas: "$user.kelas",
-                score: 1 // Ambil skor dari result
+                score: 1 
               }
             },
-            { $sort: { score: -1 } } // Urutkan siswa dari nilai tertinggi
+            { $sort: { score: -1 } } 
           ],
           as: "students"
         }
@@ -607,7 +606,7 @@ export const getStudentAnalytics = async (req, res) => {
           _id: "$topikId",
           latestScore: { $first: "$score" },
           averageTime: { $avg: "$timeTaken" },
-          modulId: { $first: "$modulId" } // Ambil modulId
+          modulId: { $first: "$modulId" } 
         }
       },
       { $lookup: { from: "topiks", localField: "_id", foreignField: "_id", as: "topicDetails" } },
@@ -656,11 +655,11 @@ export const getStudentAnalytics = async (req, res) => {
          $project: {
            _id: 0,
            moduleTitle: "$modulDetails.title",
-           moduleId: "$_id", // Kirim ID modul untuk pencocokan
+           moduleId: "$_id", 
            moduleScore: { $ifNull: [{ $round: ["$moduleScore", 0] }, 0] },
            topicScore: { $ifNull: [{ $round: ["$avgTopicScore", 0] }, 0] },
            timeInSeconds: { $round: ["$averageTime", 0] },
-           topicIds: 1 // Teruskan ID topik
+           topicIds: 1 
          }
        },
        { $sort: { moduleTitle: 1 } }
@@ -678,16 +677,16 @@ export const getStudentAnalytics = async (req, res) => {
             timeInSeconds: Math.round(topicData.averageTime),
           };
         })
-        .filter(Boolean); // Hapus entri null
+        .filter(Boolean); 
       return { ...modulePerf, topics };
     });
 
     res.status(200).json({
       progress,
       averageTimeInSeconds,
-      averageScore, // Kirim rata-rata nilai keseluruhan ke frontend
+      averageScore, 
       weakestTopic,
-      detailedPerformance: detailedPerformance.map(({ moduleId, topicIds, ...rest }) => rest), // Hapus properti internal
+      detailedPerformance: detailedPerformance.map(({ moduleId, topicIds, ...rest }) => rest), 
     });
 
   } catch (error) {

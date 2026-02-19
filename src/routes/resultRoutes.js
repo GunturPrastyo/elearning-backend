@@ -25,20 +25,21 @@ import {
     getCompetencyMap,
     checkPreTestStatus,
     getStreakLeaderboard,
+    getUserStatus,
+    updateUserStatus,
  } from "../controllers/resultController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
 
 router.route("/by-type/:testType").delete(protect, deleteResultByType);
-// Rute untuk mengambil hasil tes terakhir berdasarkan tipenya
+
 router.route("/latest-by-type/:testType").get(protect, getLatestResultByType);
 router.route("/latest-by-topic").get(protect, getLatestResultByTopic);
 
-router.route("/certificate").get(protect, generateCertificate); // Rute baru untuk sertifikat
-// Gabungkan semua metode untuk path '/progress'
+router.route("/certificate").get(protect, generateCertificate); 
 router.route("/progress")
     .get(protect, getProgress)
     .post(protect, saveProgress)
-    .delete(protect, deleteProgress); // Tambahkan metode DELETE yang hilang
+    .delete(protect, deleteProgress); 
 
 router.route("/log-study-time").post(protect, logStudyTime);
 router.route("/study-time").get(protect, getStudyTime);
@@ -46,7 +47,6 @@ router.route("/streak-leaderboard").get(protect, getStreakLeaderboard);
 router.route("/submit-test").post(protect, submitTest);
 router.route("/user/:userId").get(protect, getResultsByUser);
 
-// Gabungkan semua metode untuk path root '/'
 router.route("/").get(protect, admin, getResults).post(protect, createResult);
 
 router.route("/analytics").get(protect, getAnalytics);
@@ -56,7 +56,8 @@ router.route("/module-scores").get(protect, getModuleScores);
 router.route("/comparison-analytics").get(protect, getComparisonAnalytics);
 router.route("/recommendations").get(protect, getLearningRecommendations);
 router.route("/topics-to-reinforce").get(protect, getTopicsToReinforce);
-router.route("/streak").get(protect, getDailyStreak); // <-- Tambahkan rute yang hilang
+router.route("/streak").get(protect, getDailyStreak); 
 router.route("/check-pre-test").get(protect, checkPreTestStatus);
+router.route("/user-status").get(protect, getUserStatus).put(protect, updateUserStatus);
 
 export default router;

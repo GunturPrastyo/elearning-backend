@@ -18,12 +18,11 @@ export const createQuestion = async (req, res) => {
           questionText: q.questionText,
           options: q.options,
           answer: q.answer,
-          // Untuk pre-test, modulId datang dari 'q'. Untuk post-test, dari parameter.
           modulId: modulId || q.modulId || null,
           topikId: topikId || null,
           testType,
-          durationPerQuestion: q.durationPerQuestion || 60, // Simpan durasi
-          subMateriId: q.subMateriId || null, // Simpan subMateriId
+          durationPerQuestion: q.durationPerQuestion || 60, 
+          subMateriId: q.subMateriId || null, 
         };
         return Question.create(questionData);
       })
@@ -79,8 +78,7 @@ export const getPreTestQuestions = async (req, res) => {
   try {
     const questions = await Question.find({
       testType: "pre-test-global",
-    }).select("+answer"); // <-- Tambahkan ini untuk menyertakan jawaban
-    // Mengembalikan array kosong jika tidak ada, dan array berisi soal jika ada.
+    }).select("+answer"); 
     res.json({ questions });
   } catch (err) {
     console.error(err);
@@ -129,7 +127,7 @@ export const getPostTestModulQuestions = async (req, res) => {
     const questions = await Question.find({
       modulId: req.params.modulId,
       testType: "post-test-modul",
-    }).select("+answer"); // Sertakan jawaban, topikId, dan subMateriId
+    }).select("+answer"); 
     res.json({ questions });
   } catch (err) {
     console.error(err);
@@ -161,7 +159,7 @@ export const updatePostTestModulQuestions = async (req, res) => {
         ...q,
         modulId: req.params.modulId,
         testType: "post-test-modul",
-        topikId: q.topikId || null, // Simpan topikId jika ada
+        topikId: q.topikId || null, 
       })),
     );
 

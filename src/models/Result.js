@@ -51,7 +51,7 @@ const resultSchema = new mongoose.Schema(
         "post-test-modul",
         "post-test-topik",
         "study-session",
-        "post-test-topik-progress", // Tambahkan tipe untuk progress
+        "post-test-topik-progress", 
       ],
     },
     score: {
@@ -67,7 +67,7 @@ const resultSchema = new mongoose.Schema(
       required: true,
     },
     timeTaken: {
-      type: Number, // dalam detik
+      type: Number, 
       required: true,
     },
     modulId: {

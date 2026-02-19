@@ -7,12 +7,10 @@ import DOMPurify from "../utils/sanitize.js";
 const getEmbedUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
 
-  // Check if it's already an embed URL
   if (url.includes("youtube.com/embed/")) {
     return url;
   }
 
-  // Regex to extract video ID from various YouTube URLs
   const regExp = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=|embed\/|v\/|)([\w-]{11})(?:\S+)?/;
   const match = url.match(regExp);
 
@@ -24,9 +22,7 @@ const sanitizeSubMateri = (subMateris) => {
   return subMateris.map(sub => ({
     ...sub,
     content: DOMPurify.sanitize(sub.content || '', {
-    // Izinkan tag tambahan untuk iframe (YouTube) dan blok kode (pre, code)
     ADD_TAGS: ["iframe", "pre", "code"],
-    // Izinkan atribut yang diperlukan untuk embed video dan styling kode
     ADD_ATTR: ["style", "allow", "allowfullscreen", "frameborder", "scrolling", "src", "title", "class", "id"],
     })
   }));
@@ -93,31 +89,29 @@ export const saveMateri = async (req, res) => {
     // Validasi dan sanitasi URL YouTube
     const finalYoutubeUrl = youtube ? getEmbedUrl(youtube) : null; // Helper getEmbedUrl hanya untuk validasi
     if (youtube && !finalYoutubeUrl) {
-      // Jika URL diberikan tapi tidak valid, kirim error.
       return res.status(400).json({ message: "URL YouTube tidak valid." });
     }
 
     // Sanitasi konten sebelum disimpan
     const cleanSubMateris = sanitizeSubMateri(subMateris);
 
-    // Operasi "Upsert": Update jika ada, atau buat baru jika tidak ada.
     const materi = await Materi.findOneAndUpdate(
       { topikId: topik._id },
       {
-        subMateris: cleanSubMateris, // Data yang akan di-update atau dibuat
-        youtube: youtube || null, // Simpan URL asli dari input pengguna
-        modulId: topik.modulId, // Pastikan modulId juga tersimpan/diperbarui
+        subMateris: cleanSubMateris, 
+        youtube: youtube || null, 
+        modulId: topik.modulId, 
       },
       {
-        new: true, // Kembalikan dokumen yang sudah diupdate/dibuat
-        upsert: true, // Buat dokumen baru jika tidak ada yang cocok
+        new: true, 
+        upsert: true, 
         runValidators: true,
       }
     );
 
     res.status(200).json({
       message: "Materi berhasil disimpan",
-      data: materi, // Pastikan data yang dikembalikan adalah dokumen yang baru
+      data: materi, 
     });
   } catch (error) {
     console.error("Error saat menyimpan materi:", error);

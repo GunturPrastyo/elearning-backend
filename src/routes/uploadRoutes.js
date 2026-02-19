@@ -1,7 +1,7 @@
 import express from "express";
 import { uploadImage } from "../controllers/uploadController.js";
 import { protect, admin } from "../middlewares/authMiddleware.js";
-import { upload } from "../middlewares/upload.js"; // ✅ gunakan named import
+import { upload } from "../middlewares/upload.js"; 
 
 const router = express.Router();
 

@@ -4,7 +4,6 @@ import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 
-// Import Routes
 import modulRoutes from "./src/routes/modulRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import topikRoutes from "./src/routes/topikRoutes.js";
@@ -15,20 +14,19 @@ import resultRoutes from "./src/routes/resultRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import featureRoutes from "./src/routes/featureRoutes.js";
 import notificationRoutes from './src/routes/notificationRoutes.js';
-import analiticRoutes from './src/routes/analiticRoutes.js'; // Pastikan file ini ada
+import analiticRoutes from './src/routes/analiticRoutes.js'; 
 dotenv.config();
 const app = express();
 
 // ====================== CORS CONFIG ======================
 const allowedOrigins = [
-  process.env.FRONTEND_URL || "https://kelas-smk.vercel.app",
-  "http://localhost:3000", // Untuk development lokal
-  "https://localhost:3000", // Untuk development lokal dengan HTTPS
+  process.env.FRONTEND_URL,
+  "http://localhost:3000", 
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Izinkan request jika origin ada di dalam whitelist atau jika request tidak memiliki origin (seperti dari Postman)
+   
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -36,7 +34,7 @@ const corsOptions = {
     }
   },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  // Izinkan frontend mengirim header kustom 'X-Authorization'
+ 
   allowedHeaders: ["Content-Type", "X-Authorization"],
   credentials: true,
 };

@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import validator from "validator";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
-import Feature from "../models/Feature.js"; // Diperlukan untuk kalkulasi
+import Feature from "../models/Feature.js"; 
 import Modul from "../models/Modul.js";
 
 import fs from "fs";
@@ -156,14 +156,13 @@ export const registerUser = async (req, res) => {
         html: htmlMessage
       });
     } catch (err) {
-      console.error("Email verification send error:", err);
-      // Opsional: Hapus user jika email gagal dikirim agar bisa daftar ulang
+      
       return res.status(500).json({ message: "Gagal mengirim email verifikasi." });
     }
 
     res.status(200).json({
       message: "Registrasi berhasil. Silakan cek email Anda untuk verifikasi.",
-      // Tidak mengirim loginCredentials agar user tidak bisa auto-login sebelum verifikasi
+  
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -195,7 +194,7 @@ export const updateUserProfile = async (req, res) => {
 
     // Handle upload avatar baru
     if (req.file) {
-      // Hapus avatar lama jika ada dan bukan URL dari Google
+      
       if (user.avatar && !user.avatar.startsWith("http") && !user.avatar.includes("placeholder")) {
         const avatarFileName = path.basename(user.avatar);
         const oldPath = path.join(__dirname, "..", "..", "public", "uploads", avatarFileName);
@@ -236,7 +235,6 @@ export const changePassword = async (req, res) => {
       return res.status(404).json({ message: "User tidak ditemukan" });
     }
 
-    // User yang login via Google tidak memiliki password
     if (!user.password) {
       return res.status(400).json({ message: "Tidak dapat mengubah password untuk akun Google" });
     }
@@ -274,7 +272,6 @@ export const loginUser = async (req, res) => {
     if (!isMatch)
       return res.status(400).json({ message: "Password salah" });
 
-    // Cek apakah email sudah diverifikasi
     if (user.isVerified === false) {
       return res.status(401).json({ message: "Email belum diverifikasi. Silakan cek inbox email Anda." });
     }
@@ -292,8 +289,8 @@ export const loginUser = async (req, res) => {
 
     res.status(200).json({
       message: "Login berhasil",
-      user: { ...userObject, hasPassword: true }, // User login manual pasti punya password
-      token: token, // Kirim token di body respons
+      user: { ...userObject, hasPassword: true }, 
+      token: token, 
     });
   } catch (error) {
     console.error("Login Error:", error);
@@ -308,7 +305,6 @@ export const googleAuth = async (req, res) => {
     let email, name, picture;
 
     try {
-      // Percobaan 1: Verifikasi sebagai ID Token (Cara Lama/Standard Component)
       const ticket = await client.verifyIdToken({
         idToken: token,
         audience: process.env.GOOGLE_CLIENT_ID,
@@ -318,7 +314,6 @@ export const googleAuth = async (req, res) => {
       name = payload.name;
       picture = payload.picture;
     } catch (idTokenError) {
-      // Percobaan 2: Verifikasi sebagai Access Token (Cara Baru/Custom Button)
       client.setCredentials({ access_token: token });
       const userinfo = await client.request({
         url: "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -330,18 +325,16 @@ export const googleAuth = async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    // Jika user tidak ditemukan, buat user baru
     if (!user) {
       user = await User.create({
         email,
         name,
         avatar: picture,
-        role: 'user', // Default role untuk pengguna baru dari Google
-        isVerified: true, // User Google otomatis terverifikasi
-        password: null // Akun Google tidak memiliki password
+        role: 'user', 
+        isVerified: true, 
+        password: null 
       });
     } else {
-      // Jika user sudah ada, update nama dan avatar jika belum ada atau berbeda
       user.name = user.name || name;
       user.avatar = user.avatar || picture;
       await user.save({ validateModifiedOnly: true });
@@ -384,10 +377,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'Email tidak terdaftar.' });
     }
 
-    // Cek jika user login menggunakan Google (tidak punya password)
     if (!user.password) {
-      console.log(`[ForgotPassword] Gagal: User ${email} adalah akun Google (tanpa password).`);
-      // Gunakan status 200 agar tidak muncul error merah di console browser, tapi kirim flag success: false
       return res.status(200).json({ success: false, message: 'Akun ini menggunakan login Google. Silakan login dengan Google.' });
     }
 
@@ -408,13 +398,12 @@ export const forgotPassword = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     // 4. Buat Reset URL (Arahkan ke Frontend)
-    // Pastikan FRONTEND_URL ada di .env, atau fallback ke localhost:3000
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
-    const logoUrl = `${frontendUrl}/logo2.webp`; // Mengambil logo dari folder public frontend
+    const logoUrl = `${frontendUrl}/logo2.webp`; 
 
     // 5. Buat Template Email HTML
-    const message = `Anda meminta reset password. Silakan klik link berikut: ${resetUrl}`; // Fallback untuk klien email teks biasa
+    const message = `Anda meminta reset password. Silakan klik link berikut: ${resetUrl}`; 
     
     const htmlMessage = `
       <!DOCTYPE html>
@@ -523,7 +512,7 @@ export const forgotPassword = async (req, res) => {
         email: user.email,
         subject: 'Reset Password Token',
         message,
-        html: htmlMessage, // Kirim versi HTML
+        html: htmlMessage, 
       });
 
       res.status(200).json({ success: true, message: 'Jika email terdaftar, link reset telah dikirim.' });
@@ -581,11 +570,9 @@ export const resetPassword = async (req, res) => {
 // ========================= LOGOUT =========================
 export const logoutUser = async (req, res) => {
   try {
-    // Pastikan kita mendapatkan ID user, baik dari _id (mongoose doc) atau id (jwt payload)
     const userId = req.user?._id || req.user?.id;
 
     if (userId) {
-      // Reset lastActiveAt ke masa lalu (Epoch) agar user langsung dianggap offline
       await User.findByIdAndUpdate(userId, { lastActiveAt: new Date(0) });
       console.log(`[Logout] User ${userId} status set to offline.`);
     }
@@ -611,7 +598,6 @@ export const completeTopic = async (req, res) => {
       return res.status(404).json({ message: "User tidak ditemukan" });
     }
 
-    // Tambahkan topikId ke array jika belum ada (mencegah duplikat)
     await User.updateOne({ _id: userId }, { $addToSet: { topicCompletions: topikId } });
 
     res.status(200).json({ message: "Topik berhasil ditandai selesai" });
@@ -629,13 +615,12 @@ export const getCompetencyProfile = async (req, res) => {
     // 1. Ambil profil kompetensi pengguna dan buat peta skor
     const user = await User.findById(userId).select('competencyProfile').lean();
     
-    // --- REVISI: Hitung Skor Berbobot (Weighted Average) ---
     // Menggunakan logika yang sama dengan resultController agar skor akurat sesuai bobot modul
     const allModules = await Modul.find().select('featureWeights').lean();
     const userFeatureScores = {}; // Map: FeatureId -> Score
 
     if (user && user.competencyProfile) {
-      const featureMap = {}; // FeatureId -> { weightedSum: 0, totalWeight: 0 }
+      const featureMap = {}; 
 
       user.competencyProfile.forEach(cp => {
         if (!cp.modulId || !cp.featureId) return;
@@ -743,7 +728,6 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: "Email sudah digunakan." });
     }
 
-    // Gunakan password yang diberikan atau default 'password123'
     const passwordToHash = password || 'password123';
     const hashedPassword = await bcrypt.hash(passwordToHash, 10);
 
@@ -751,7 +735,7 @@ export const createUser = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: role || "user", // Default role adalah 'user'
+      role: role || "user", 
       kelas,
     });
 
@@ -780,7 +764,6 @@ export const updateUser = async (req, res) => {
       return res.status(404).json({ message: "Pengguna tidak ditemukan." });
     }
 
-    // Cek jika email baru sudah digunakan oleh user lain
     if (email && email !== user.email) {
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -809,7 +792,6 @@ export const deleteUser = async (req, res) => {
   try {
     const userId = req.params.id;
 
-    // Jangan biarkan admin menghapus akunnya sendiri dari sini
     if (userId === req.user.id) {
       return res.status(400).json({ message: "Tidak dapat menghapus akun sendiri." });
     }

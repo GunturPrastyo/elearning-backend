@@ -9,7 +9,6 @@ import { protect, admin } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-// Semua rute di bawah ini hanya bisa diakses oleh admin
 router.use(protect, admin);
 
 router.route("/admin-analytics").get(protect, admin, getAdminAnalytics);

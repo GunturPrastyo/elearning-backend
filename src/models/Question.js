@@ -28,7 +28,7 @@ const questionSchema = new mongoose.Schema(
     answer: {
       type: String,
       required: [true, "Jawaban yang benar harus ditentukan."],
-      select: false, // Secara default, jangan kirim jawaban ke klien saat query
+      select: false, 
     },
     testType: {
       type: String,
@@ -47,11 +47,11 @@ const questionSchema = new mongoose.Schema(
     },
     durationPerQuestion: {
       type: Number,
-      default: 60, // Durasi default 60 detik
+      default: 60, 
     },
     subMateriId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Materi.subMateris", // Referensi ke sub-dokumen
+      ref: "Materi.subMateris", 
       default: null,
     },
   },

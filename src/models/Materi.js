@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-// Definisikan skema untuk setiap bagian sub-materi
 const subMateriSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -24,16 +23,16 @@ const materiSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       required: true,
       ref: "Topik",
-      unique: true, // Pastikan setiap topik hanya memiliki satu dokumen materi
+      unique: true,
     },
-    subMateris: [subMateriSchema], // Gunakan array dari skema sub-materi di atas
+    subMateris: [subMateriSchema], 
     youtube: {
       type: String,
       trim: true,
     },
   },
   {
-    timestamps: true, // Otomatis menambahkan createdAt dan updatedAt
+    timestamps: true, 
   }
 );
 

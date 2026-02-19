@@ -18,11 +18,10 @@ import { protect } from "../middlewares/authMiddleware.js";
 const router = express.Router();
 
 // --- Rute Publik ---
-// ✅ Rute untuk Pre-Test Global (diambil oleh user yang belum tentu login saat memulai)
 router.route("/pre-test")
   .get(getPreTestQuestions);
 
-// Semua rute di bawah ini memerlukan login
+
 router.use(protect);
 
 // --- Rute Generik ---
@@ -35,11 +34,11 @@ router.route("/:id")
 
 // --- Rute Pre-Test (Update) ---
 router.route("/pre-test")
-  .put(updatePreTestQuestions); // Update soal pre-test (admin)
+  .put(updatePreTestQuestions); 
 
 // --- Rute Post-Test Modul ---
 router.route("/post-test-modul")
-  .post(createQuestion); // Buat soal post-test modul (admin)
+  .post(createQuestion); 
 
 router.route("/post-test-modul/:modulId")
   .get(getPostTestModulQuestions) // Ambil soal post-test modul (admin/user)

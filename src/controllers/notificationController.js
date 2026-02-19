@@ -11,7 +11,7 @@ export const getNotifications = async (req, res) => {
     const userId = req.user._id;
     const notifications = await Notification.find({ userId })
       .sort({ createdAt: -1 })
-      .limit(20); // Batasi untuk performa
+      .limit(20); 
     res.status(200).json(notifications);
   } catch (error) {
     res.status(500).json({ message: "Server Error: " + error.message });
@@ -27,8 +27,6 @@ export const createNotification = async (req, res) => {
   try {
     const { userId, message, link } = req.body;
 
-    // Pastikan user yang membuat notifikasi adalah user yang login (atau sistem)
-    // Untuk saat ini, kita percaya input dari frontend yang sudah terautentikasi
     if (req.user._id.toString() !== userId) {
       return res.status(403).json({ message: "Akses ditolak." });
     }
@@ -36,7 +34,6 @@ export const createNotification = async (req, res) => {
     const newNotification = new Notification({ userId, message, link });
     await newNotification.save();
 
-    // Kirim notifikasi real-time ke user yang bersangkutan
     req.io.to(userId).emit("new_notification", newNotification);
 
     res.status(201).json(newNotification);
@@ -77,7 +74,6 @@ export const deleteNotification = async (req, res) => {
       return res.status(404).json({ message: "Notifikasi tidak ditemukan." });
     }
 
-    // Pastikan user hanya bisa menghapus notifikasinya sendiri
     if (notification.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Akses ditolak." });
     }

@@ -19,7 +19,6 @@ export const getTopikByModul = async (req, res) => {
     const { modulId } = req.params;
     const topikList = await Topik.find({ modulId }).populate("modulId").sort({ order: 1 });
 
-    // Jika kosong, tetap kirim array kosong (bukan 404)
     if (!topikList || topikList.length === 0) {
       return res.status(200).json([]);
     }
@@ -68,11 +67,9 @@ export const createTopik = async (req, res) => {
     // Cek apakah slug sudah digunakan
     const existingTopik = await Topik.findOne({ slug });
     if (existingTopik) {
-      // Jika sudah ada, tambahkan angka unik di akhir
       slug = `${slug}-${Date.now()}`;
     }
 
-    // Hitung jumlah topik yang sudah ada di modul ini untuk menentukan urutan
     const topicCount = await Topik.countDocuments({ modulId });
 
     const topik = new Topik({ title, slug, modulId, order: topicCount });
@@ -81,12 +78,12 @@ export const createTopik = async (req, res) => {
     res.status(201).json(topik);
   } catch (err) {
     console.error("Error saat membuat topik:", err);
-    // Hapus console.log duplikat
+   
     res.status(500).json({ message: "Gagal membuat topik: " + err.message });
   }
 };
 
-// Hapus topik berdasarkan ID
+
 export const deleteTopik = async (req, res) => {
   try {
     const { id } = req.params;
@@ -107,13 +104,12 @@ export const deleteTopik = async (req, res) => {
  */
 export const updateTopikOrder = async (req, res) => {
   try {
-    const { orderedIds } = req.body; // Mengharapkan array berisi ID topik
+    const { orderedIds } = req.body; 
 
     if (!Array.isArray(orderedIds)) {
       return res.status(400).json({ message: "Data urutan tidak valid." });
     }
 
-    // Membuat array operasi update untuk bulkWrite
     const bulkOps = orderedIds.map((id, index) => ({
       updateOne: {
         filter: { _id: id },

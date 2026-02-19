@@ -7,7 +7,7 @@ import Topik from "../models/Topik.js";
 import Materi from "../models/Materi.js";
 import Question from "../models/Question.js";
 import User from "../models/User.js";
-import { hasCompletedModulePostTest, isModuleLockedForUser } from "./resultController.js"; // Impor fungsi helper dari resultController
+import { hasCompletedModulePostTest, isModuleLockedForUser } from "./resultController.js";
 
 export const getModules = async (req, res) => {
   try {
@@ -15,7 +15,6 @@ export const getModules = async (req, res) => {
 
     let query = {};
     if (search) {
-      // Mencari title yang mengandung string 'search' (case-insensitive)
       query.title = { $regex: search, $options: "i" };
     }
     const modules = await Modul.find(query).sort({ order: 1 });
@@ -44,15 +43,12 @@ export const getModulesWithProgress = async (req, res) => {
     // Agregasi untuk menghitung jumlah pengguna unik per modul
     const userCountsByModule = await Result.aggregate([
       { $match: { testType: 'post-test-topik', modulId: { $exists: true } } },
-      // Kelompokkan untuk mendapatkan pengguna unik per modul
       { $group: { _id: { modulId: "$modulId", userId: "$userId" } } },
-      // Hitung pengguna unik per modul
       { $group: { _id: "$_id.modulId", userCount: { $sum: 1 } } }
     ]);
     const userCountMap = new Map(userCountsByModule.map(item => [item._id.toString(), item.userCount]));
 
     const modulesWithDetails = modules.map(modul => {
-      // Gunakan fungsi helper terpusat dari userController
       const isModulLocked = isModuleLockedForUser(modul.category, user.learningLevel);
       const topicsForThisModule = allTopics.filter(t => t.modulId.equals(modul._id));
       const topicIdsForThisModule = topicsForThisModule.map(t => t._id);
@@ -62,15 +58,15 @@ export const getModulesWithProgress = async (req, res) => {
         .filter(q => topicIdsForThisModule.some(tid => tid.equals(q.topikId)))
         .reduce((sum, q) => sum + (q.durationPerQuestion || 0), 0);
 
-      const totalDuration = Math.ceil(totalDurationInSeconds / 60); // Konversi ke menit dan bulatkan ke atas
+      const totalDuration = Math.ceil(totalDurationInSeconds / 60); // Konversi ke menit 
       const userCount = userCountMap.get(modul._id.toString()) || 0;
 
-      let previousTopicCompleted = true; // Anggap "topik sebelum yang pertama" sudah selesai
+      let previousTopicCompleted = true; 
       const topicsWithStatus = topicsForThisModule.map(topik => {
         const isCompleted = user.topicCompletions?.some(id => id.equals(topik._id)) || false;
         const isTopicLocked = isModulLocked || !previousTopicCompleted;
 
-        previousTopicCompleted = isCompleted; // Status ini akan digunakan oleh topik BERIKUTNYA
+        previousTopicCompleted = isCompleted; 
         return {
           _id: topik._id,
           title: topik.title,
@@ -80,7 +76,6 @@ export const getModulesWithProgress = async (req, res) => {
         };
       });
 
-      // Koreksi: Topik pertama tidak boleh terkunci jika modulnya tidak terkunci
       if (!isModulLocked && topicsWithStatus.length > 0) {
         topicsWithStatus[0].isLocked = false;
       }
@@ -89,7 +84,6 @@ export const getModulesWithProgress = async (req, res) => {
       const totalTopics = topicsWithStatus.length;
       const progress = totalTopics > 0 ? Math.round((completedTopicsCount / totalTopics) * 100) : 0;
 
-      // Tentukan status modul secara dinamis berdasarkan progres dan status kunci
       let status;
       if (isModulLocked) {
         status = 'Terkunci';
@@ -106,11 +100,11 @@ export const getModulesWithProgress = async (req, res) => {
         progress,
         completedTopics: completedTopicsCount,
         totalTopics,
-        userCount, // Tambahkan userCount
-        totalDuration, // Tambahkan totalDuration
-        topics: topicsWithStatus, // Sertakan topik dengan statusnya
-        isLocked: isModulLocked, // Pastikan isLocked tetap ada
-        status, // Tambahkan status yang sudah dihitung
+        userCount, 
+        totalDuration, 
+        topics: topicsWithStatus, 
+        isLocked: isModulLocked, 
+        status, 
       };
     });
 
@@ -145,11 +139,8 @@ export const getModuleDetailsForUser = async (req, res) => {
 
     // 2. Ambil semua topik, materi, soal, dan status penyelesaian user dalam satu query
     const topicsDetails = await Topik.aggregate([
-      // Match topik untuk modul yang spesifik
       { $match: { modulId: new mongoose.Types.ObjectId(modul._id) } },
-      // Urutkan topik berdasarkan field 'order'
       { $sort: { order: 1 } },
-      // Ambil materi terkait
       {
         $lookup: {
           from: "materis",
@@ -158,19 +149,19 @@ export const getModuleDetailsForUser = async (req, res) => {
           as: "materiArr"
         }
       },
-      // Ambil soal post-test terkait
+   
       {
         $lookup: {
           from: "questions",
           let: { topik_id: "$_id" },
           pipeline: [
             { $match: { $expr: { $and: [{ $eq: ["$topikId", "$$topik_id"] }, { $eq: ["$testType", "post-test-topik"] }] } } },
-            { $project: { answer: 0 } } // Hapus jawaban
+            { $project: { answer: 0 } } 
           ],
           as: "questions"
         }
       },
-      // Lookup ke hasil tes untuk mengecek apakah sudah pernah dikerjakan
+     
       {
         $lookup: {
           from: "results",
@@ -189,7 +180,7 @@ export const getModuleDetailsForUser = async (req, res) => {
           ], as: "attempts"
         }
       },
-      // Bentuk ulang output dan tambahkan status penyelesaian
+    
       {
         $addFields: {
           materi: {
@@ -208,12 +199,12 @@ export const getModuleDetailsForUser = async (req, res) => {
               null
             ]
           },
-          // Gunakan data dari `user.topicCompletions` untuk menentukan status `isCompleted`
+         
           isCompleted: { $in: ["$_id", user.topicCompletions || []] }, 
           hasAttempted: { $gt: [{ $size: "$attempts" }, 0] }
         }
       },
-      // Hapus field yang tidak perlu
+     
       { $project: { materiArr: 0, completion: 0, attempts: 0 } }
     ]);
 
@@ -226,7 +217,7 @@ export const getModuleDetailsForUser = async (req, res) => {
     const hasCompletedPostTest = await hasCompletedModulePostTest(userId, modul._id);
 
     res.status(200).json({
-      ...modul.toObject(), // Gunakan toObject() untuk mengubah dokumen Mongoose menjadi objek biasa
+      ...modul.toObject(), 
       progress,
       completedTopics: completedCount,
       totalTopics,
@@ -247,13 +238,11 @@ export const getModuleDetailsForUser = async (req, res) => {
  */
 export const getModuleById = async (req, res) => {
   try {
-    // Menggunakan `slug` dari rute eksplisit, atau `idOrSlug` dari rute umum
+   
     const idOrSlug = req.params.slug || req.params.idOrSlug;
 
-    // Cek apakah parameter adalah ObjectId yang valid
     const isObjectId = mongoose.Types.ObjectId.isValid(idOrSlug);
 
-    // Tentukan query berdasarkan tipe parameter
     const query = isObjectId ? { _id: idOrSlug } : { slug: idOrSlug };
     const modul = await Modul.findOne(query);
 
@@ -286,7 +275,7 @@ export const createModule = async (req, res) => {
 export const updateModul = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, overview, category, slug } = req.body; // Data teks dari FormData
+    const { title, overview, category, slug } = req.body; 
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: "ID Modul tidak valid" });
@@ -297,24 +286,19 @@ export const updateModul = async (req, res) => {
       return res.status(404).json({ message: "Modul tidak ditemukan" });
     }
 
-    // Update data teks
     modul.title = title || modul.title;
     modul.overview = overview || modul.overview;
     modul.category = category || modul.category;
     modul.slug = slug || modul.slug;
 
-    // Cek apakah ada file icon baru yang di-upload
     if (req.file) {
-      // Jika ada icon lama, hapus dari storage
       if (modul.icon) {
-        // Dapatkan path absolut dari direktori saat ini
         const __dirname = path.dirname(new URL(import.meta.url).pathname.substring(1));
         const oldPath = path.join(__dirname, "..", "..", "public", "uploads", modul.icon);
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath);
         }
       }
-      // Update dengan nama file icon yang baru
       modul.icon = req.file.filename;
     }
 
@@ -349,7 +333,6 @@ export const deleteModul = async (req, res) => {
       return res.status(404).json({ message: "Modul tidak ditemukan" });
     }
 
-    // Hapus file ikon dari storage jika ada
     if (modul.icon) {
       const __dirname = path.dirname(new URL(import.meta.url).pathname.substring(1));
       const iconPath = path.join(__dirname, "..", "..", "public", "uploads", modul.icon);
@@ -358,13 +341,11 @@ export const deleteModul = async (req, res) => {
       }
     }
 
-    // Hapus semua data yang terkait dengan modul ini (cascading delete)
     await Topik.deleteMany({ modulId: id });
     await Materi.deleteMany({ modulId: id });
     await Question.deleteMany({ modulId: id });
     await Result.deleteMany({ modulId: id });
 
-    // Hapus modul dari database
     await Modul.findByIdAndDelete(id);
 
     res.status(200).json({ message: "Modul dan semua data terkait berhasil dihapus" });
@@ -381,7 +362,7 @@ export const deleteModul = async (req, res) => {
  */
 export const updateModulOrder = async (req, res) => {
   try {
-    const { orderedIds } = req.body; // Mengharapkan array berisi ID modul
+    const { orderedIds } = req.body; 
 
     if (!Array.isArray(orderedIds)) {
       return res.status(400).json({ message: "Data urutan tidak valid." });
@@ -437,7 +418,7 @@ export const getModuleFeatureWeights = async (req, res) => {
 export const updateModuleFeatureWeights = async (req, res) => {
   try {
     const { id } = req.params;
-    const { weights } = req.body; // Menerima { weights: [{ featureId, weight }] }
+    const { weights } = req.body; 
 
     if (!Array.isArray(weights)) {
       return res.status(400).json({ message: "Data bobot tidak valid, harus berupa array." });
@@ -446,7 +427,6 @@ export const updateModuleFeatureWeights = async (req, res) => {
     const modul = await Modul.findById(id);
 
     if (modul) {
-      // Validasi sederhana untuk memastikan data yang masuk benar
       const validatedWeights = weights.map(fw => ({
         featureId: fw.featureId,
         weight: Number(fw.weight) || 0

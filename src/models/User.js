@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema({
       ref: 'Feature',
       required: true,
     },
-    modulId: { // Tambahkan field ini untuk melacak asal skor
+    modulId: { 
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Modul',
       required: false,
@@ -32,20 +32,21 @@ const userSchema = new mongoose.Schema({
       required: true,
       default: 0,
     },
-    _id: false // Tidak perlu _id untuk setiap item array
+    _id: false 
   }],
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   dailyStreak: { type: Number, default: 0 },
-  lastActiveAt: Date, // Field baru untuk melacak kapan terakhir user online
-  lastIp: String, // Menyimpan IP terakhir user
-
+  lastActiveAt: Date, 
+  lastIp: String, 
+  hasSeenModulTour: { type: Boolean, default: false },
+  hasSeenProfileTour: { type: Boolean, default: false },
+  hasSeenModuleDetailTour: { type: Boolean, default: false },
+  hasSeenAnalyticsTour: { type: Boolean, default: false },
+  lastStreakShownDate: { type: Date, default: null },
 }, { timestamps: true });
 
 
-
-
-// Method untuk memeriksa password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
