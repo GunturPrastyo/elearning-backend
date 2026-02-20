@@ -83,6 +83,35 @@ export const createTopik = async (req, res) => {
   }
 };
 
+export const updateTopik = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+
+    const topik = await Topik.findById(id);
+
+    if (!topik) {
+      return res.status(404).json({ message: "Topik tidak ditemukan" });
+    }
+
+    if (title && title !== topik.title) {
+      topik.title = title;
+      let slug = slugify(title, { lower: true, strict: true });
+
+      const existingTopik = await Topik.findOne({ slug, _id: { $ne: id } });
+      if (existingTopik) {
+        slug = `${slug}-${Date.now()}`;
+      }
+      topik.slug = slug;
+    }
+
+    const updatedTopik = await topik.save();
+    res.status(200).json(updatedTopik);
+  } catch (err) {
+    console.error("Error saat memperbarui topik:", err);
+    res.status(500).json({ message: "Gagal memperbarui topik: " + err.message });
+  }
+};
 
 export const deleteTopik = async (req, res) => {
   try {
