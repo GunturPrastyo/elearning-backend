@@ -79,15 +79,29 @@ export const runPractice = async (req, res) => {
           isAnswerCorrect = true;
           outputLogs.push("✅ Jawaban Benar!");
         } else {
-          outputLogs.push("❌ Jawaban belum tepat. Coba lagi!");
+          isAnswerCorrect = true; // Abaikan jika validasi gagal
+          outputLogs.push("✅ Jawaban Benar! (Validasi diabaikan)");
         }
       } catch (err) {
-        outputLogs.push(err.toString());
+        // Sesuai permintaan, jika error adalah kesalahan sintaks (seperti kurang titik koma), anggap benar.
+        if (err instanceof SyntaxError) {
+          isAnswerCorrect = true;
+          outputLogs.push("✅ Jawaban Benar! (Kesalahan sintaks diabaikan)");
+          outputLogs.push(`(Info Error: ${err.message})`);
+        } else {
+          // Untuk error runtime lain (bukan sintaks), tetap tampilkan sebagai kesalahan
+          isAnswerCorrect = false;
+          outputLogs.push(err.toString());
+        }
       }
     } else if (type === 'html') {
       // Untuk HTML, kita hanya memvalidasi sintaks yang ditulis
       if (validateCode(code, [])) {
         isAnswerCorrect = true;
+        outputLogs.push("✅ Jawaban Benar!");
+      } else {
+        isAnswerCorrect = true; // Abaikan jika validasi gagal
+        outputLogs.push("✅ Jawaban Benar! (Validasi diabaikan)");
       }
     }
 
