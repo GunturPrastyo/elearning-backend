@@ -16,6 +16,7 @@ import featureRoutes from "./src/routes/featureRoutes.js";
 import notificationRoutes from './src/routes/notificationRoutes.js';
 import analiticRoutes from './src/routes/analiticRoutes.js'; 
 import praktikRoutes from './src/routes/praktikRoutes.js';
+import settingsRoutes from "./src/routes/settingsRoutes.js";
 import Modul from "./src/models/Modul.js";
 import aiTutorRoutes from "./src/routes/aiTutorRoutes.js";
 dotenv.config();
@@ -76,7 +77,7 @@ app.use("/api/features", featureRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analiticRoutes);
 app.use('/api/praktik', praktikRoutes);
-
+app.use("/api/settings", settingsRoutes);
 // ====================== MONGODB CONNECT ======================
 mongoose
   .connect(process.env.MONGO_URI, {
