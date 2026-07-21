@@ -1,7 +1,7 @@
 import express from 'express';
 import { getSettings, updateSettings } from '../controllers/settingsController.js';
 import { protect, admin } from '../middlewares/authMiddleware.js';
-import upload from '../middlewares/uploadMiddleware.js';
+import { upload } from '../middlewares/upload.js';
 
 const router = express.Router();
 
